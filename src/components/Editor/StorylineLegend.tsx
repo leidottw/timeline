@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
 import { NodeEditor } from './NodeEditor'
+import { StorylineEditor } from './StorylineEditor'
 import type { Storyline } from '../../types'
 
 export function StorylineLegend() {
   const storylines = useTimelineStore((s) => s.storylines)
   const removeStoryline = useTimelineStore((s) => s.removeStoryline)
-  const [editingFor, setEditingFor] = useState<Storyline | null>(null)
+  const [addNodeFor, setAddNodeFor] = useState<Storyline | null>(null)
+  const [editStoryline, setEditStoryline] = useState<Storyline | null>(null)
 
   return (
     <div className="flex flex-wrap gap-2 px-4 py-2.5">
@@ -21,7 +23,14 @@ export function StorylineLegend() {
             {s.position === 'above' ? '上/左' : '下/右'} · {s.nodes.length} 節點
           </span>
           <button
-            onClick={() => setEditingFor(s)}
+            onClick={() => setEditStoryline(s)}
+            className="text-neutral-400 hover:text-neutral-800"
+            title="編輯故事線"
+          >
+            <i className="ti ti-pencil text-sm" aria-hidden="true" />
+          </button>
+          <button
+            onClick={() => setAddNodeFor(s)}
             className="text-neutral-400 hover:text-neutral-800"
             title="新增節點"
           >
@@ -37,7 +46,10 @@ export function StorylineLegend() {
         </div>
       ))}
 
-      {editingFor && <NodeEditor storyline={editingFor} onClose={() => setEditingFor(null)} />}
+      {addNodeFor && <NodeEditor storyline={addNodeFor} onClose={() => setAddNodeFor(null)} />}
+      {editStoryline && (
+        <StorylineEditor storyline={editStoryline} onClose={() => setEditStoryline(null)} />
+      )}
     </div>
   )
 }

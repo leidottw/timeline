@@ -1,32 +1,53 @@
 import { useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
-import type { StorylinePosition } from '../../types'
+import type { Storyline, StorylinePosition } from '../../types'
 
 const PALETTE = ['#D85A30', '#378ADD', '#7F77DD', '#D4537E', '#1D9E75', '#BA7517']
 
-export function StorylineEditor({ onClose }: { onClose: () => void }) {
+export function StorylineEditor({
+  storyline,
+  onClose,
+}: {
+  /** When provided, the editor opens in edit mode for this storyline instead of create mode. */
+  storyline?: Storyline
+  onClose: () => void
+}) {
   const addStoryline = useTimelineStore((s) => s.addStoryline)
+  const updateStoryline = useTimelineStore((s) => s.updateStoryline)
   const storylines = useTimelineStore((s) => s.storylines)
+  const isEditing = Boolean(storyline)
 
-  const [name, setName] = useState('')
-  const [position, setPosition] = useState<StorylinePosition>('above')
-  const [color, setColor] = useState(PALETTE[storylines.length % PALETTE.length])
-  const [description, setDescription] = useState('')
+  const [name, setName] = useState(storyline?.name ?? '')
+  const [position, setPosition] = useState<StorylinePosition>(storyline?.position ?? 'above')
+  const [order, setOrder] = useState(storyline?.order ?? 1)
+  const [color, setColor] = useState(storyline?.color ?? PALETTE[storylines.length % PALETTE.length])
+  const [description, setDescription] = useState(storyline?.description ?? '')
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    const sameSide = storylines.filter((s) => s.position === position)
-    const order = sameSide.length > 0 ? Math.max(...sameSide.map((s) => s.order)) + 1 : 1
-    addStoryline({
-      id: `storyline-${Date.now()}`,
-      name: name.trim(),
-      color,
-      position,
-      order,
-      description: description.trim() || undefined,
-      nodes: [],
-    })
+
+    if (isEditing && storyline) {
+      updateStoryline(storyline.id, {
+        name: name.trim(),
+        color,
+        position,
+        order,
+        description: description.trim() || undefined,
+      })
+    } else {
+      const sameSide = storylines.filter((s) => s.position === position)
+      const newOrder = sameSide.length > 0 ? Math.max(...sameSide.map((s) => s.order)) + 1 : 1
+      addStoryline({
+        id: `storyline-${Date.now()}`,
+        name: name.trim(),
+        color,
+        position,
+        order: newOrder,
+        description: description.trim() || undefined,
+        nodes: [],
+      })
+    }
     onClose()
   }
 
@@ -42,7 +63,7 @@ export function StorylineEditor({ onClose }: { onClose: () => void }) {
         className="w-80 rounded-xl bg-white p-5 shadow-lg"
       >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-medium">新增故事線</h3>
+          <h3 className="text-base font-medium">{isEditing ? '編輯故事線' : '新增故事線'}</h3>
           <button type="button" onClick={onClose} aria-label="關閉">
             <i className="ti ti-x text-neutral-400" aria-hidden="true" />
           </button>
@@ -69,6 +90,17 @@ export function StorylineEditor({ onClose }: { onClose: () => void }) {
             <option value="above">上方（水平模式）/ 左側（垂直模式）</option>
             <option value="below">下方（水平模式）/ 右側（垂直模式）</option>
           </select>
+        </label>
+
+        <label className="mb-2.5 block text-xs text-neutral-600">
+          排列順序（數字越小越靠近主軸）
+          <input
+            type="number"
+            min={1}
+            value={order}
+            onChange={(e) => setOrder(Number(e.target.value) || 1)}
+            className="mt-1 w-full"
+          />
         </label>
 
         <label className="mb-2.5 block text-xs text-neutral-600">
@@ -102,7 +134,7 @@ export function StorylineEditor({ onClose }: { onClose: () => void }) {
             取消
           </button>
           <button type="submit" className="text-xs font-medium">
-            建立故事線
+            {isEditing ? '儲存變更' : '建立故事線'}
           </button>
         </div>
       </form>
