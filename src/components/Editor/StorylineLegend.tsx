@@ -1,0 +1,43 @@
+import { useState } from 'react'
+import { useTimelineStore } from '../../store/useTimelineStore'
+import { NodeEditor } from './NodeEditor'
+import type { Storyline } from '../../types'
+
+export function StorylineLegend() {
+  const storylines = useTimelineStore((s) => s.storylines)
+  const removeStoryline = useTimelineStore((s) => s.removeStoryline)
+  const [editingFor, setEditingFor] = useState<Storyline | null>(null)
+
+  return (
+    <div className="flex flex-wrap gap-2 px-4 py-2.5">
+      {storylines.map((s) => (
+        <div
+          key={s.id}
+          className="flex items-center gap-2 rounded-md border border-black/10 px-2.5 py-1.5 text-xs"
+        >
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
+          <span className="font-medium">{s.name}</span>
+          <span className="text-neutral-400">
+            {s.position === 'above' ? '上/左' : '下/右'} · {s.nodes.length} 節點
+          </span>
+          <button
+            onClick={() => setEditingFor(s)}
+            className="text-neutral-400 hover:text-neutral-800"
+            title="新增節點"
+          >
+            <i className="ti ti-plus text-sm" aria-hidden="true" />
+          </button>
+          <button
+            onClick={() => removeStoryline(s.id)}
+            className="text-neutral-400 hover:text-red-600"
+            title="刪除故事線"
+          >
+            <i className="ti ti-trash text-sm" aria-hidden="true" />
+          </button>
+        </div>
+      ))}
+
+      {editingFor && <NodeEditor storyline={editingFor} onClose={() => setEditingFor(null)} />}
+    </div>
+  )
+}

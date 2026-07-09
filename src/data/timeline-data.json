@@ -1,0 +1,127 @@
+{
+  "storylines": [
+    {
+      "id": "three-kingdoms",
+      "name": "三國",
+      "color": "#D85A30",
+      "position": "above",
+      "order": 1,
+      "description": "東漢末年至三國時期的重要戰役與事件",
+      "nodes": [
+        {
+          "id": "battle-of-guandu",
+          "title": "官渡之戰",
+          "timeRange": { "start": "0200-02", "end": "0200-11" },
+          "description": "曹操於官渡大敗袁紹，奠定統一北方基礎。",
+          "tags": ["戰爭", "三國"],
+          "nodeType": "戰役",
+          "links": [
+            { "url": "https://zh.wikipedia.org/wiki/官渡之戰", "type": "wiki" }
+          ]
+        },
+        {
+          "id": "battle-of-red-cliffs",
+          "title": "赤壁之戰",
+          "timeRange": { "start": "0208-07", "end": "0208-11" },
+          "description": "孫劉聯軍於長江赤壁大敗曹操軍隊，奠定三國鼎立基礎。",
+          "tags": ["戰爭", "三國"],
+          "nodeType": "戰役",
+          "links": [
+            { "url": "https://zh.wikipedia.org/wiki/赤壁之戰", "type": "wiki" },
+            { "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "type": "youtube" }
+          ]
+        },
+        {
+          "id": "wei-founded",
+          "title": "曹丕稱帝，魏國建立",
+          "time": "0220-12",
+          "description": "曹丕逼漢獻帝禪讓，東漢正式滅亡，魏國建立。",
+          "tags": ["政治事件", "三國"],
+          "nodeType": "政治事件"
+        },
+        {
+          "id": "battle-of-yiling",
+          "title": "夷陵之戰",
+          "timeRange": { "start": "0222-01", "end": "0222-08" },
+          "description": "劉備為報荊州之仇東征孫吳，於猇亭遭陸遜火攻大敗，蜀漢元氣大傷。",
+          "tags": ["戰爭", "三國"],
+          "nodeType": "戰役",
+          "links": [
+            { "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "type": "youtube" }
+          ]
+        },
+        {
+          "id": "jin-unifies",
+          "title": "西晉滅吳，統一三國",
+          "time": "0280-05",
+          "description": "西晉滅東吳，結束近百年的分裂局面。",
+          "tags": ["政治事件", "三國"],
+          "nodeType": "政治事件"
+        }
+      ]
+    },
+    {
+      "id": "roman-empire",
+      "name": "羅馬",
+      "color": "#378ADD",
+      "position": "below",
+      "order": 1,
+      "description": "羅馬帝國的重要戰役與統治時期",
+      "nodes": [
+        {
+          "id": "five-good-emperors",
+          "title": "五賢帝時期",
+          "timeRange": { "start": "0096", "end": "0180" },
+          "description": "涅爾瓦至馬可·奧理略的統治期間，被視為羅馬帝國的黃金時代。",
+          "tags": ["政治事件", "羅馬"],
+          "nodeType": "政治事件"
+        },
+        {
+          "id": "third-century-crisis",
+          "title": "三世紀危機",
+          "timeRange": { "start": "0235", "end": "0284" },
+          "description": "羅馬帝國陷入內戰、經濟崩潰與外族入侵的動盪時期。",
+          "tags": ["政治事件", "羅馬"],
+          "nodeType": "政治事件"
+        },
+        {
+          "id": "battle-of-adrianople",
+          "title": "阿德里安堡戰役",
+          "time": "0378-08",
+          "description": "哥德人大敗羅馬軍隊，羅馬皇帝瓦倫斯陣亡，象徵帝國軍事優勢的終結。",
+          "tags": ["戰爭", "羅馬"],
+          "nodeType": "戰役"
+        }
+      ]
+    },
+    {
+      "id": "ptolemaic-dynasty",
+      "name": "托勒密王朝",
+      "color": "#7F77DD",
+      "position": "below",
+      "order": 2,
+      "description": "希臘化埃及的托勒密王朝重要時間點",
+      "nodes": [
+        {
+          "id": "ptolemy-i-reign",
+          "title": "托勒密一世統治",
+          "timeRange": { "start": "-0305", "end": "-0282" },
+          "description": "托勒密一世自立為埃及法老，建立托勒密王朝，並奠定亞歷山大城的學術地位。",
+          "tags": ["政治事件", "托勒密"],
+          "nodeType": "政治事件"
+        },
+        {
+          "id": "cleopatra-death",
+          "title": "克麗奧佩脫拉七世之死",
+          "time": "-0030",
+          "description": "末代法老克麗奧佩脫拉七世自殺身亡，托勒密王朝滅亡，埃及成為羅馬行省。",
+          "tags": ["政治事件", "托勒密"],
+          "nodeType": "政治事件",
+          "links": [
+            { "url": "https://zh.wikipedia.org/wiki/克麗奧佩脫拉七世", "type": "wiki" }
+          ]
+        }
+      ]
+    }
+  ]
+}
