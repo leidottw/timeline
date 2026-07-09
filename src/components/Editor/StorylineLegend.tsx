@@ -24,22 +24,25 @@ export function StorylineLegend() {
           </span>
           <button
             onClick={() => setEditStoryline(s)}
-            className="text-neutral-400 hover:text-neutral-800"
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
             title="編輯故事線"
+            aria-label="編輯故事線"
           >
-            <i className="ti ti-pencil text-sm" aria-hidden="true" />
+            <i className="ti ti-edit text-sm" aria-hidden="true" />
           </button>
           <button
             onClick={() => setAddNodeFor(s)}
-            className="text-neutral-400 hover:text-neutral-800"
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
             title="新增節點"
+            aria-label="新增節點"
           >
             <i className="ti ti-plus text-sm" aria-hidden="true" />
           </button>
           <button
             onClick={() => removeStoryline(s.id)}
-            className="text-neutral-400 hover:text-red-600"
+            className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-red-600"
             title="刪除故事線"
+            aria-label="刪除故事線"
           >
             <i className="ti ti-trash text-sm" aria-hidden="true" />
           </button>
