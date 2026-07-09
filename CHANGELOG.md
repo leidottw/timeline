@@ -9,6 +9,7 @@
 - Legend 中的故事線新增展開/收合功能（chevron 按鈕），展開後依節點時間先後順序列出該故事線所有節點清單；點擊清單項目會在主時間軸開啟該節點的詳情卡片。清單以彈出式 popover 呈現於該故事線 chip 下方，維持原本 chip 橫向排列（flex-wrap），不會撐開整列版面
 - 節點清單 popover 每個項目新增編輯按鈕，可修改既有節點的標題、時間（點/範圍）、說明、標籤與連結。store 新增 `updateNode` / `removeNode`（此次先接上 `updateNode`）
 - 節點清單 popover 點擊外部區域時會自動關閉（監聽 document pointerdown，判斷是否落在該故事線 chip 容器外）
+- 工具列 tag 篩選 popover 同樣加上點擊外部自動關閉
 
 ### 修正
 
