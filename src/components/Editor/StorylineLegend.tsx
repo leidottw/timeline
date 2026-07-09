@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
 import { NodeEditor } from './NodeEditor'
 import { StorylineEditor } from './StorylineEditor'
@@ -34,6 +34,7 @@ function StorylineChip({
   storyline,
   expanded,
   onToggleExpand,
+  onClosePopover,
   onEdit,
   onAddNode,
   onRemove,
@@ -42,6 +43,7 @@ function StorylineChip({
   storyline: Storyline
   expanded: boolean
   onToggleExpand: () => void
+  onClosePopover: () => void
   onEdit: () => void
   onAddNode: () => void
   onRemove: () => void
@@ -49,9 +51,24 @@ function StorylineChip({
 }) {
   const setFocusedNodeId = useTimelineStore((s) => s.setFocusedNodeId)
   const nodes = useMemo(() => sortedNodes(storyline.nodes), [storyline.nodes])
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!expanded) return
+    function handlePointerDown(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onClosePopover()
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [expanded, onClosePopover])
 
   return (
-    <div className="relative flex items-center gap-2 rounded-md border border-black/10 px-2.5 py-1.5 text-xs">
+    <div
+      ref={containerRef}
+      className="relative flex items-center gap-2 rounded-md border border-black/10 px-2.5 py-1.5 text-xs"
+    >
       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: storyline.color }} />
       <span className="font-medium">{storyline.name}</span>
       <span className="text-neutral-400">
@@ -145,6 +162,7 @@ export function StorylineLegend() {
           storyline={s}
           expanded={expandedId === s.id}
           onToggleExpand={() => setExpandedId((id) => (id === s.id ? null : s.id))}
+          onClosePopover={() => setExpandedId(null)}
           onEdit={() => setEditStoryline(s)}
           onAddNode={() => setAddNodeFor(s)}
           onRemove={() => removeStoryline(s.id)}
