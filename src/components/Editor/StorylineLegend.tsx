@@ -37,6 +37,7 @@ function StorylineChip({
   onEdit,
   onAddNode,
   onRemove,
+  onEditNode,
 }: {
   storyline: Storyline
   expanded: boolean
@@ -44,6 +45,7 @@ function StorylineChip({
   onEdit: () => void
   onAddNode: () => void
   onRemove: () => void
+  onEditNode: (node: TimelineNode) => void
 }) {
   const setFocusedNodeId = useTimelineStore((s) => s.setFocusedNodeId)
   const nodes = useMemo(() => sortedNodes(storyline.nodes), [storyline.nodes])
@@ -97,15 +99,23 @@ function StorylineChip({
           ) : (
             <ul>
               {nodes.map((node) => (
-                <li key={node.id}>
+                <li key={node.id} className="flex items-center gap-1 hover:bg-neutral-50">
                   <button
                     onClick={() => setFocusedNodeId(node.id)}
-                    className="flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-neutral-50"
+                    className="flex min-w-0 flex-1 items-baseline gap-2 px-2.5 py-1.5 text-left text-xs"
                   >
                     <span className="shrink-0 text-neutral-400" style={{ minWidth: 110 }}>
                       {formatNodeTime(node)}
                     </span>
                     <span className="truncate text-neutral-800">{node.title}</span>
+                  </button>
+                  <button
+                    onClick={() => onEditNode(node)}
+                    className="mr-2 flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
+                    title="編輯節點"
+                    aria-label="編輯節點"
+                  >
+                    <i className="ti ti-edit text-sm" aria-hidden="true" />
                   </button>
                 </li>
               ))}
@@ -122,6 +132,9 @@ export function StorylineLegend() {
   const removeStoryline = useTimelineStore((s) => s.removeStoryline)
   const [addNodeFor, setAddNodeFor] = useState<Storyline | null>(null)
   const [editStoryline, setEditStoryline] = useState<Storyline | null>(null)
+  const [editNodeFor, setEditNodeFor] = useState<{ storyline: Storyline; node: TimelineNode } | null>(
+    null
+  )
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   return (
@@ -135,12 +148,20 @@ export function StorylineLegend() {
           onEdit={() => setEditStoryline(s)}
           onAddNode={() => setAddNodeFor(s)}
           onRemove={() => removeStoryline(s.id)}
+          onEditNode={(node) => setEditNodeFor({ storyline: s, node })}
         />
       ))}
 
       {addNodeFor && <NodeEditor storyline={addNodeFor} onClose={() => setAddNodeFor(null)} />}
       {editStoryline && (
         <StorylineEditor storyline={editStoryline} onClose={() => setEditStoryline(null)} />
+      )}
+      {editNodeFor && (
+        <NodeEditor
+          storyline={editNodeFor.storyline}
+          node={editNodeFor.node}
+          onClose={() => setEditNodeFor(null)}
+        />
       )}
     </div>
   )

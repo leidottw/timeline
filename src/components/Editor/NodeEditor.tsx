@@ -1,25 +1,30 @@
 import { useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
-import type { LinkType, Storyline } from '../../types'
+import type { LinkType, Storyline, TimelineNode } from '../../types'
 
 export function NodeEditor({
   storyline,
+  node,
   onClose,
 }: {
   storyline: Storyline
+  /** When provided, the editor opens in edit mode for this node instead of create mode. */
+  node?: TimelineNode
   onClose: () => void
 }) {
   const addNode = useTimelineStore((s) => s.addNode)
+  const updateNode = useTimelineStore((s) => s.updateNode)
+  const isEditing = Boolean(node)
 
-  const [title, setTitle] = useState('')
-  const [isRange, setIsRange] = useState(false)
-  const [time, setTime] = useState('')
-  const [rangeStart, setRangeStart] = useState('')
-  const [rangeEnd, setRangeEnd] = useState('')
-  const [description, setDescription] = useState('')
-  const [tagsInput, setTagsInput] = useState('')
-  const [linkUrl, setLinkUrl] = useState('')
-  const [linkType, setLinkType] = useState<LinkType>('generic')
+  const [title, setTitle] = useState(node?.title ?? '')
+  const [isRange, setIsRange] = useState(Boolean(node?.timeRange))
+  const [time, setTime] = useState(node?.time ?? '')
+  const [rangeStart, setRangeStart] = useState(node?.timeRange?.start ?? '')
+  const [rangeEnd, setRangeEnd] = useState(node?.timeRange?.end ?? '')
+  const [description, setDescription] = useState(node?.description ?? '')
+  const [tagsInput, setTagsInput] = useState((node?.tags ?? []).join(', '))
+  const [linkUrl, setLinkUrl] = useState(node?.links?.[0]?.url ?? '')
+  const [linkType, setLinkType] = useState<LinkType>(node?.links?.[0]?.type ?? 'generic')
   const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(e: React.FormEvent) {
@@ -44,14 +49,21 @@ export function NodeEditor({
       .map((t) => t.trim())
       .filter(Boolean)
 
-    addNode(storyline.id, {
-      id: `node-${Date.now()}`,
+    const payload = {
       title: title.trim(),
-      ...(isRange ? { timeRange: { start: rangeStart.trim(), end: rangeEnd.trim() } } : { time: time.trim() }),
+      ...(isRange
+        ? { timeRange: { start: rangeStart.trim(), end: rangeEnd.trim() }, time: undefined }
+        : { time: time.trim(), timeRange: undefined }),
       description: description.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined,
       links: linkUrl.trim() ? [{ url: linkUrl.trim(), type: linkType }] : undefined,
-    })
+    }
+
+    if (isEditing && node) {
+      updateNode(storyline.id, node.id, payload)
+    } else {
+      addNode(storyline.id, { id: `node-${Date.now()}`, ...payload })
+    }
     onClose()
   }
 
@@ -68,7 +80,8 @@ export function NodeEditor({
       >
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-medium">
-            新增節點 <span style={{ color: storyline.color }}>· {storyline.name}</span>
+            {isEditing ? '編輯節點' : '新增節點'}{' '}
+            <span style={{ color: storyline.color }}>· {storyline.name}</span>
           </h3>
           <button type="button" onClick={onClose} aria-label="關閉">
             <i className="ti ti-x text-neutral-400" aria-hidden="true" />
@@ -161,7 +174,7 @@ export function NodeEditor({
             取消
           </button>
           <button type="submit" className="text-xs font-medium">
-            新增節點
+            {isEditing ? '儲存變更' : '新增節點'}
           </button>
         </div>
       </form>

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Orientation, Storyline, TagMode, TimelineData, ViewportRange } from '../types'
+import type { Orientation, Storyline, TagMode, TimelineData, TimelineNode, ViewportRange } from '../types'
 import { getNodeSpan } from '../lib/date/historicalDate'
 import initialData from '../data/timeline-data.json'
 
@@ -56,7 +56,9 @@ interface TimelineState {
   addStoryline: (s: Storyline) => void
   updateStoryline: (id: string, patch: Partial<Storyline>) => void
   removeStoryline: (id: string) => void
-  addNode: (storylineId: string, node: Storyline['nodes'][number]) => void
+  addNode: (storylineId: string, node: TimelineNode) => void
+  updateNode: (storylineId: string, nodeId: string, patch: Partial<TimelineNode>) => void
+  removeNode: (storylineId: string, nodeId: string) => void
   loadData: (data: TimelineData) => void
   hydrateFromParams: (params: {
     tags?: string[]
@@ -160,6 +162,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         storylines,
         fullRange: computeFullRange(storylines),
         allTags: collectAllTags(storylines),
+      }
+    }),
+
+  updateNode: (storylineId, nodeId, patch) =>
+    set((state) => {
+      const storylines = state.storylines.map((s) =>
+        s.id === storylineId
+          ? { ...s, nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)) }
+          : s
+      )
+      return {
+        storylines,
+        fullRange: computeFullRange(storylines),
+        allTags: collectAllTags(storylines),
+      }
+    }),
+
+  removeNode: (storylineId, nodeId) =>
+    set((state) => {
+      const storylines = state.storylines.map((s) =>
+        s.id === storylineId ? { ...s, nodes: s.nodes.filter((n) => n.id !== nodeId) } : s
+      )
+      return {
+        storylines,
+        fullRange: computeFullRange(storylines),
+        allTags: collectAllTags(storylines),
+        focusedNodeId: state.focusedNodeId === nodeId ? null : state.focusedNodeId,
       }
     }),
 
