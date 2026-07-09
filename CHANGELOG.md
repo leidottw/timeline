@@ -7,7 +7,10 @@
 ### 修正
 
 - Legend 中的故事線先前只能新增節點與刪除，缺少編輯入口；新增「編輯故事線」按鈕，可修改名稱、位置（上/下、左/右）、排列順序與代表色
-- 修正 `index.html` 引用的 tabler-icons CDN 網址路徑錯誤（誤加了 `iconfont/` 這一層目錄），導致全站圖示字型從未載入成功，不只是編輯按鈕，所有按鈕圖示（新增、刪除等）實際上都是空的，只是尺寸夠大不容易察覺。正確路徑不含該層目錄。（前一版 commit 曾誤判為 `ti-pencil` 這個 class 不存在而改用 `ti-edit`，事後確認 `ti-pencil` 本身是合法的圖示 class，真正原因是 CDN 網址本身有誤。）
+- 修正 `index.html` 引用的圖示字型 CDN 網址，導致全站圖示字型從未載入成功，不只是編輯按鈕，所有按鈕圖示（新增、刪除等）實際上都是空的，只是尺寸夠大不容易察覺。排查過程：
+  1. 一開始誤判為 `ti-pencil` 這個 class 不存在，改用 `ti-edit`（事後確認 `ti-pencil` 本身是合法的圖示 class，此判斷有誤）
+  2. 接著發現網址多了 `iconfont/` 這一層目錄（該路徑屬於另一個套件 `@tabler/icons`），移除後改用 cdnjs `.../3.3.0/tabler-icons.min.css`，但 cdnjs 並未同步鏡射 `tabler-icons` 這個套件的 3.3.0 版本，仍是 404
+  3. 最終改用 jsDelivr 直接對應 npm 套件 `@tabler/icons-webfont@3.3.0` 的實際檔案路徑 `dist/tabler-icons.min.css`，並實際 fetch 驗證回應 `Content-Type: text/css` 且內容標頭為 `Tabler Icons 3.3.0 by tabler`，確認可正常載入
 
 ## [0.1.0] - 2026-07-10
 
