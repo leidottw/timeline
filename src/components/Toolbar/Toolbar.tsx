@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
 import type { TimelineData } from '../../types'
 import { StorylineEditor } from '../Editor/StorylineEditor'
@@ -20,6 +20,18 @@ export function Toolbar() {
   const [showEditor, setShowEditor] = useState(false)
   const [showTagPicker, setShowTagPicker] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const tagPickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showTagPicker) return
+    function handlePointerDown(e: PointerEvent) {
+      if (tagPickerRef.current && !tagPickerRef.current.contains(e.target as Node)) {
+        setShowTagPicker(false)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [showTagPicker])
 
   function exportJson() {
     const data: TimelineData = { storylines }
@@ -52,7 +64,7 @@ export function Toolbar() {
     <div className="flex flex-wrap items-center gap-2.5 border-b border-black/10 px-4 py-2.5">
       <span className="mr-2 text-[15px] font-medium">歷史時間軸</span>
 
-      <div className="relative">
+      <div className="relative" ref={tagPickerRef}>
         <div className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-2.5 py-1.5">
           <i className="ti ti-filter text-[15px] text-neutral-500" aria-hidden="true" />
           <span className="text-xs text-neutral-500">篩選:</span>
