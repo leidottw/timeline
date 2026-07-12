@@ -50,7 +50,12 @@ export function dateStringToNumber(input: string): number {
 
 /** Format a fractional year back into a human label, e.g. "西元前 208 年" / "西元 1949 年". */
 export function formatYearLabel(year: number): string {
-  const rounded = Math.round(year)
+  // A date's fractional part encodes its month/day *within* that calendar
+  // year, so it must always floor back to that year — e.g. "1949-10-01" is
+  // 1949.75, and rounding (instead of flooring) would misreport it as 1950.
+  // This holds for BCE (negative) years too since floor always rounds
+  // toward -Infinity, recovering the intended base year regardless of sign.
+  const rounded = Math.floor(year)
   if (rounded <= 0) {
     return `西元前 ${1 - rounded} 年`
   }
