@@ -1,34 +1,38 @@
-import type { Storyline, TimelineNode } from '../../types'
-import { formatHistoricalDate } from '../../lib/date/historicalDate'
-import { LinkPreview } from '../LinkPreview/LinkPreview'
-import { useTimelineStore } from '../../store/useTimelineStore'
+import type { Storyline, TimelineNode } from "../../types";
+import { formatHistoricalDate } from "../../lib/date/historicalDate";
+import { LinkPreview } from "../LinkPreview/LinkPreview";
+import { useTimelineStore } from "../../store/useTimelineStore";
 
 function formatNodeTime(node: TimelineNode): string {
   if (node.timeRange) {
-    return `${formatHistoricalDate(node.timeRange.start)} — ${formatHistoricalDate(node.timeRange.end)}`
+    return `${formatHistoricalDate(node.timeRange.start)} — ${formatHistoricalDate(node.timeRange.end)}`;
   }
   if (node.time) {
-    return formatHistoricalDate(node.time)
+    return formatHistoricalDate(node.time);
   }
-  return ''
+  return "";
 }
 
 export function NodeDetailCard({
   node,
   storyline,
+  onClose,
 }: {
-  node: TimelineNode
-  storyline: Storyline
+  node: TimelineNode;
+  storyline: Storyline;
+  onClose?: () => void;
 }) {
-  const setFocusedNodeId = useTimelineStore((s) => s.setFocusedNodeId)
-  const toggleTag = useTimelineStore((s) => s.toggleTag)
+  const setFocusedNodeId = useTimelineStore((s) => s.setFocusedNodeId);
+  const toggleTag = useTimelineStore((s) => s.toggleTag);
 
   return (
     <div className="w-72 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-neutral-900">{node.title}</span>
+        <span className="text-sm font-medium text-neutral-900">
+          {node.title}
+        </span>
         <button
-          onClick={() => setFocusedNodeId(null)}
+          onClick={() => (onClose ? onClose() : setFocusedNodeId(null))}
           aria-label="關閉"
           className="shrink-0 text-neutral-400 hover:text-neutral-700"
         >
@@ -41,13 +45,20 @@ export function NodeDetailCard({
       </p>
 
       {node.description && (
-        <p className="mb-2.5 text-xs leading-relaxed text-neutral-800">{node.description}</p>
+        <p className="mb-2.5 text-xs leading-relaxed text-neutral-800">
+          {node.description}
+        </p>
       )}
 
       {node.images && node.images.length > 0 && (
         <div className="mb-2.5 flex gap-1.5 overflow-x-auto">
           {node.images.map((src, i) => (
-            <img key={i} src={src} alt="" className="h-16 w-24 shrink-0 rounded-md object-cover" />
+            <img
+              key={i}
+              src={src}
+              alt=""
+              className="h-16 w-24 shrink-0 rounded-md object-cover"
+            />
           ))}
         </div>
       )}
@@ -74,5 +85,5 @@ export function NodeDetailCard({
         </div>
       )}
     </div>
-  )
+  );
 }
