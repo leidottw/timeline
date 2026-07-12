@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
-import { computeStorylineLayouts, totalExtent, LABEL_BASE_OFFSET } from '../../lib/layout/timelineLayout'
+import {
+  computeStorylineLayouts,
+  totalExtent,
+  LABEL_BASE_OFFSET,
+  LANE_HEIGHT,
+  HOVER_TOOLTIP_GAP,
+} from '../../lib/layout/timelineLayout'
 import { generateTicks } from '../../lib/layout/ticks'
+import { measureTextWidth } from '../../lib/layout/labelStagger'
 import { formatYearLabel } from '../../lib/date/historicalDate'
 import { nodeMatchesTags } from '../../lib/filter/tagFilter'
 import { NodeDetailCard } from '../Node/NodeDetailCard'
@@ -101,11 +108,24 @@ export function Timeline() {
         // rendering them (and their leader lines) far off-canvas
         visibleRange: { start: viewportRange.start, end: viewportRange.end },
       }),
+    // `timeToPos` is a fresh closure every render, but it's derived purely
+    // from `axisLength` and `viewportRange` (already listed below) — depend
+    // on axisLength directly rather than on the function identity, which
+    // would invalidate every render instead of only when the value actually
+    // changes. Missing `axisLength` here previously meant this memo kept
+    // using a stale, pre-ResizeObserver axis length on first paint (see
+    // MIN_AXIS_LENGTH fallback above) while the SVG itself rendered with the
+    // fresh one — the resulting start/end pixel mismatch is what produced
+    // the stray diagonal connector lines until the next zoom/pan forced a
+    // recompute.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [storylines, isHorizontal, viewportRange.start, viewportRange.end]
+    [storylines, isHorizontal, viewportRange.start, viewportRange.end, axisLength]
   )
   const aboveExtent = totalExtent(above)
   const belowExtent = totalExtent(below)
+  // The innermost storyline on each side sits right next to the main axis —
+  // its own baseline track line is redundant there, so skip drawing it.
+  const innermostStorylineIds = new Set([above[0]?.storyline.id, below[0]?.storyline.id].filter(Boolean))
 
   const crossLength = aboveExtent + belowExtent + AXIS_CROSS_MARGIN * 2
   const canvasW = isHorizontal ? MARGIN_START + axisLength + MARGIN_END : crossLength
@@ -137,8 +157,9 @@ export function Timeline() {
       const svgPos = localPos / scale
       centerFraction = Math.min(1, Math.max(0, (svgPos - MARGIN_START) / axisLength))
     }
-    const newSpanRaw = span * factor
-    const newSpan = Math.max(newSpanRaw, 0.5)
+    // setViewportRange itself clamps the resulting span/position to the
+    // store's pan bounds, so no local min/max clamping is needed here.
+    const newSpan = span * factor
     const center = viewportRange.start + span * centerFraction
     setViewportRange({
       start: center - newSpan * centerFraction,
@@ -267,28 +288,29 @@ export function Timeline() {
                   </text>
                 )}
 
-                {/* track base line */}
-                {isHorizontal ? (
-                  <line
-                    x1={MARGIN_START}
-                    y1={point(0, laneSign * trackOffset).y}
-                    x2={MARGIN_START + axisLength}
-                    y2={point(0, laneSign * trackOffset).y}
-                    stroke={layout.storyline.color}
-                    strokeWidth={1}
-                    opacity={0.4}
-                  />
-                ) : (
-                  <line
-                    x1={point(0, laneSign * trackOffset).x}
-                    y1={MARGIN_START}
-                    x2={point(0, laneSign * trackOffset).x}
-                    y2={MARGIN_START + axisLength}
-                    stroke={layout.storyline.color}
-                    strokeWidth={1}
-                    opacity={0.4}
-                  />
-                )}
+                {/* track base line — the innermost track sits right next to the main axis, so its own line would be redundant */}
+                {!innermostStorylineIds.has(layout.storyline.id) &&
+                  (isHorizontal ? (
+                    <line
+                      x1={MARGIN_START}
+                      y1={point(0, laneSign * trackOffset).y}
+                      x2={MARGIN_START + axisLength}
+                      y2={point(0, laneSign * trackOffset).y}
+                      stroke={layout.storyline.color}
+                      strokeWidth={1}
+                      opacity={0.4}
+                    />
+                  ) : (
+                    <line
+                      x1={point(0, laneSign * trackOffset).x}
+                      y1={MARGIN_START}
+                      x2={point(0, laneSign * trackOffset).x}
+                      y2={MARGIN_START + axisLength}
+                      stroke={layout.storyline.color}
+                      strokeWidth={1}
+                      opacity={0.4}
+                    />
+                  ))}
 
                 {/* nodes — markers that visually collide are merged into a cluster badge below, so skip them here */}
                 {layout.lanedNodes
@@ -296,7 +318,8 @@ export function Timeline() {
                   .map(({ node, lane, start, end, labelOffset, labelShift, renderStartPos, renderEndPos }) => {
                   const matches = nodeMatchesTags(node, activeTags, tagMode)
                   const opacity = matches ? 1 : 0.15
-                  const laneOffset = trackOffset + lane * 26
+                  const isHovered = hoveredNode === node.id
+                  const laneOffset = trackOffset + lane * LANE_HEIGHT
                   // renderStartPos/renderEndPos are already clamped to the visible plot
                   // area, so a range that runs off-screen is drawn clipped at the edge
                   // instead of stretching (and dragging its leader line) off-canvas.
@@ -394,8 +417,8 @@ export function Timeline() {
                                 !endClipped
                               )}
                               fill={startClipped || endClipped ? `url(#${gradientId})` : layout.storyline.color}
-                              stroke="#0006"
-                              strokeWidth={0.5}
+                              stroke={isHovered ? '#000' : '#0006'}
+                              strokeWidth={isHovered ? 1.5 : 0.5}
                             />
                           </>
                         ) : (
@@ -406,12 +429,19 @@ export function Timeline() {
                             height={Math.max(Math.abs(p2.y - p1.y), 8)}
                             rx={4}
                             fill={layout.storyline.color}
-                            stroke="#0006"
-                            strokeWidth={0.5}
+                            stroke={isHovered ? '#000' : '#0006'}
+                            strokeWidth={isHovered ? 1.5 : 0.5}
                           />
                         )
                       ) : (
-                        <circle cx={centerPoint.x} cy={centerPoint.y} r={6} fill={layout.storyline.color} stroke="#0006" strokeWidth={0.5} />
+                        <circle
+                          cx={centerPoint.x}
+                          cy={centerPoint.y}
+                          r={isHovered ? 4.5 : 3.5}
+                          fill="none"
+                          stroke={layout.storyline.color}
+                          strokeWidth={isHovered ? 2.5 : 1.75}
+                        />
                       )}
 
                       {needsLeader && (
@@ -421,28 +451,21 @@ export function Timeline() {
                           x2={labelPoint.x}
                           y2={labelPoint.y}
                           stroke={layout.storyline.color}
-                          strokeWidth={0.75}
+                          strokeWidth={isHovered ? 1.25 : 0.75}
                           strokeDasharray="1,2"
-                          opacity={0.5}
+                          opacity={isHovered ? 0.9 : 0.5}
                         />
                       )}
-                      <text x={labelPoint.x} y={labelPoint.y} textAnchor="middle" fontSize={10} fill="#333">
+                      <text
+                        x={labelPoint.x}
+                        y={labelPoint.y}
+                        textAnchor="middle"
+                        fontSize={10}
+                        fontWeight={isHovered ? 700 : 400}
+                        fill={isHovered ? '#000' : '#333'}
+                      >
                         {node.title}
                       </text>
-
-                      {hoveredNode === node.id && (
-                        <text
-                          x={labelPoint.x}
-                          y={labelPoint.y + laneSign * -12}
-                          textAnchor="middle"
-                          fontSize={9}
-                          fill="#666"
-                        >
-                          {node.timeRange
-                            ? `${formatYearLabel(start)} – ${formatYearLabel(end)}`
-                            : formatYearLabel(start)}
-                        </text>
-                      )}
                     </g>
                   )
                 })}
@@ -450,7 +473,7 @@ export function Timeline() {
                 {/* marker clusters — nodes whose markers genuinely overlap on screen, merged into one badge; click to zoom in and let them spread apart */}
                 {layout.clusters.map((cluster) => {
                   const axisPos = Math.min(Math.max(timeToPos(cluster.center), MARGIN_START), MARGIN_START + axisLength)
-                  const clusterLaneOffset = trackOffset + cluster.lane * 26
+                  const clusterLaneOffset = trackOffset + cluster.lane * LANE_HEIGHT
                   const badgePoint = point(axisPos, laneSign * clusterLaneOffset)
                   const pad = Math.max((cluster.end - cluster.start) * 0.4, 1)
                   return (
@@ -486,6 +509,45 @@ export function Timeline() {
               </g>
             )
           })}
+
+          {/* hover tooltip — rendered last (on top of every node) with an opaque
+              background so it stays legible no matter what it lands on */}
+          {hoveredNode &&
+            (() => {
+              for (const layout of [...above, ...below]) {
+                const found = layout.lanedNodes.find((n) => !n.clustered && n.node.id === hoveredNode)
+                if (!found) continue
+                const laneSign = layout.storyline.position === 'above' ? 1 : -1
+                const laneOffset = layout.baseOffset + found.lane * LANE_HEIGHT
+                const axisPos = (found.renderStartPos + found.renderEndPos) / 2
+                const tooltipPoint = point(
+                  axisPos + found.labelShift,
+                  laneSign * (laneOffset + found.labelOffset + HOVER_TOOLTIP_GAP)
+                )
+                const tooltipText = found.node.timeRange
+                  ? `${formatYearLabel(found.start)} – ${formatYearLabel(found.end)}`
+                  : formatYearLabel(found.start)
+                const textWidth = measureTextWidth(tooltipText, 9)
+                return (
+                  <g key="hover-tooltip" style={{ pointerEvents: 'none' }}>
+                    <rect
+                      x={tooltipPoint.x - textWidth / 2 - 4}
+                      y={tooltipPoint.y - 10}
+                      width={textWidth + 8}
+                      height={14}
+                      rx={3}
+                      fill="#fff"
+                      stroke="#0002"
+                      strokeWidth={1}
+                    />
+                    <text x={tooltipPoint.x} y={tooltipPoint.y} textAnchor="middle" fontSize={9} fill="#333">
+                      {tooltipText}
+                    </text>
+                  </g>
+                )
+              }
+              return null
+            })()}
         </svg>
       </div>
 

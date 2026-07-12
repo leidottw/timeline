@@ -1,6 +1,6 @@
 import type { Storyline } from '../../types'
 import { assignLanes, type LanedNode } from './laneAssignment'
-import { assignLabelRows, measureTextWidth } from './labelStagger'
+import { assignLabelRows, measureTextWidth, type LaneObstacle } from './labelStagger'
 import { clusterOverlappingMarkers } from './markerCluster'
 import { getNodeSpan } from '../date/historicalDate'
 
@@ -35,13 +35,18 @@ export interface StorylineLayout {
   clusters: MarkerCluster[]
 }
 
-const LANE_HEIGHT = 26
+// Lane spacing is kept a whole multiple of the row step (levelsPerLane must
+// stay an integer — see labelStagger.ts) so a label staggered a couple of
+// rows out from its own lane still lands with real clearance before the
+// next lane, not just barely-not-touching it.
+export const LANE_HEIGHT = 44
 const MIN_BAND = 36
 const BAND_GAP = 14
 const LABEL_FONT_SIZE = 10
-export const LABEL_BASE_OFFSET = 14
-const LABEL_ROW_STEP = 13
-const MAX_LABEL_ROWS = 4
+export const LABEL_BASE_OFFSET = 16
+const LABEL_ROW_STEP = 22
+/** perpendicular pixel gap from a label to its hover tooltip (Timeline.tsx reuses this so band height reserves room for it) */
+export const HOVER_TOOLTIP_GAP = 14
 /** half the marker circle's rendered footprint, in px, used for marker-vs-marker collision only */
 const MARKER_HALF_FOOTPRINT = 7
 const MIN_BAR_HALF_WIDTH = 4
@@ -110,6 +115,9 @@ export function computeStorylineLayouts(
       }
 
       // --- pass 1: marker-vs-marker pixel collision, per lane ---
+      // Also records each node's pixel footprint per lane as a "lane
+      // occupancy" map — pass 2 uses this so a label staggered out from its
+      // own lane never climbs high enough to land on another lane's marker/bar.
       const byLane = new Map<number, LanedNode[]>()
       for (const n of laned) {
         const arr = byLane.get(n.lane) ?? []
@@ -117,7 +125,8 @@ export function computeStorylineLayouts(
         byLane.set(n.lane, arr)
       }
       const clusterOf = new Map<string, string>()
-      for (const [, laneNodes] of byLane) {
+      const laneOccupancy = new Map<number, LaneObstacle[]>()
+      for (const [lane, laneNodes] of byLane) {
         const candidates = laneNodes.map((n) => {
           const { start: startPos, end: endPos } = renderPosById.get(n.node.id)!
           const isRange = n.node.timeRange !== undefined
@@ -126,12 +135,16 @@ export function computeStorylineLayouts(
             : MARKER_HALF_FOOTPRINT
           return { id: n.node.id, axisPos: (startPos + endPos) / 2, halfFootprint }
         })
+        laneOccupancy.set(
+          lane,
+          candidates.map((c) => ({ start: c.axisPos - c.halfFootprint, end: c.axisPos + c.halfFootprint }))
+        )
         for (const [id, clusterId] of clusterOverlappingMarkers(candidates)) {
           clusterOf.set(id, clusterId)
         }
       }
 
-      // --- pass 2: label-vs-label pixel collision, among non-clustered nodes only ---
+      // --- pass 2: label-vs-label AND label-vs-other-lane pixel collision, among non-clustered nodes only ---
       const soloNodes = laned.filter((n) => !clusterOf.has(n.node.id))
       const labelCandidates = soloNodes.map((n) => {
         const { start: startPos, end: endPos } = renderPosById.get(n.node.id)!
@@ -139,9 +152,19 @@ export function computeStorylineLayouts(
         const halfExtent = options.isHorizontal
           ? measureTextWidth(n.node.title, LABEL_FONT_SIZE) / 2 + 4
           : LABEL_FONT_SIZE / 2 + 4
-        return { id: n.node.id, axisPos, halfExtent }
+        return { id: n.node.id, axisPos, halfExtent, lane: n.lane }
       })
-      const placements = assignLabelRows(labelCandidates, MAX_LABEL_ROWS)
+      // No fixed cap on stagger rows — a dense cluster grows the band taller
+      // rather than being forced into the horizontal-nudge overflow row.
+      // Bounded by candidate count as a safety ceiling (a label can never
+      // need more rows than there are labels to collide with).
+      const maxLabelRows = Math.max(1, labelCandidates.length)
+      const placements = assignLabelRows(labelCandidates, maxLabelRows, {
+        laneOccupancy,
+        laneHeight: LANE_HEIGHT,
+        baseOffset: LABEL_BASE_OFFSET,
+        rowStep: LABEL_ROW_STEP,
+      })
       const placementById = new Map(placements.map((p) => [p.id, p]))
       const halfExtentById = new Map(labelCandidates.map((c) => [c.id, c.halfExtent]))
 
@@ -149,7 +172,7 @@ export function computeStorylineLayouts(
       const lanedNodes: LayoutedNode[] = laned.map((n) => {
         const clustered = clusterOf.has(n.node.id)
         const p = placementById.get(n.node.id)
-        if (p) maxRowUsed = Math.max(maxRowUsed, Math.min(p.row, MAX_LABEL_ROWS))
+        if (p) maxRowUsed = Math.max(maxRowUsed, Math.min(p.row, maxLabelRows))
         const { start: renderStartPos, end: renderEndPos } = renderPosById.get(n.node.id)!
         const axisPos = (renderStartPos + renderEndPos) / 2
         let displayAxisPos = p ? p.displayAxisPos : axisPos
@@ -168,7 +191,10 @@ export function computeStorylineLayouts(
       })
 
       const clusters = buildClusters(laned, clusterOf)
-      const labelSpace = LABEL_BASE_OFFSET + maxRowUsed * LABEL_ROW_STEP + LABEL_FONT_SIZE + 6
+      // Reserve room for the hover tooltip beyond the outermost used row too,
+      // so hovering the furthest-staggered label doesn't poke into whatever
+      // comes after this band.
+      const labelSpace = LABEL_BASE_OFFSET + maxRowUsed * LABEL_ROW_STEP + LABEL_FONT_SIZE + HOVER_TOOLTIP_GAP + 10
       const bandHeight = Math.max(MIN_BAND, laneCount * LANE_HEIGHT, labelSpace)
 
       layouts.push({ storyline, baseOffset: cumulative, bandHeight, lanedNodes, clusters })

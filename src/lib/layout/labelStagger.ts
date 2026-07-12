@@ -18,6 +18,14 @@ export interface LabelCandidate {
   axisPos: number
   /** half of the label's footprint along the time axis, in pixels */
   halfExtent: number
+  /** which marker lane this label's node sits in, so a stagger row can be checked against *other* lanes' markers/bars */
+  lane: number
+}
+
+export interface LaneObstacle {
+  /** pixel range along the time axis this marker/bar occupies */
+  start: number
+  end: number
 }
 
 export interface LabelPlacement {
@@ -28,27 +36,66 @@ export interface LabelPlacement {
   displayAxisPos: number
 }
 
-const ROW_PADDING = 6
+export interface LabelRowOptions {
+  /** occupied pixel intervals per lane index — used to keep a staggered label from climbing into another lane's marker/bar */
+  laneOccupancy: Map<number, LaneObstacle[]>
+  /** perpendicular pixel distance between adjacent lanes (must match the caller's lane spacing) */
+  laneHeight: number
+  /** perpendicular pixel distance from a node's own lane to its row-0 label */
+  baseOffset: number
+  /** perpendicular pixel distance added per extra stagger row */
+  rowStep: number
+}
 
-export function assignLabelRows(candidates: LabelCandidate[], maxRows: number): LabelPlacement[] {
+const ROW_PADDING = 6
+/** how close a label's perpendicular offset must be to another lane's baseline to count as overlapping it */
+const OBSTACLE_MARGIN = 12
+
+function rowBlockedByOtherLane(candidate: LabelCandidate, row: number, options: LabelRowOptions): boolean {
+  const absOffset = candidate.lane * options.laneHeight + options.baseOffset + row * options.rowStep
+  const left = candidate.axisPos - candidate.halfExtent
+  const right = candidate.axisPos + candidate.halfExtent
+  for (const [lane, intervals] of options.laneOccupancy) {
+    if (lane === candidate.lane) continue
+    if (Math.abs(absOffset - lane * options.laneHeight) > OBSTACLE_MARGIN) continue
+    if (intervals.some((iv) => iv.start <= right && iv.end >= left)) return true
+  }
+  return false
+}
+
+export function assignLabelRows(candidates: LabelCandidate[], maxRows: number, options: LabelRowOptions): LabelPlacement[] {
+  // A lane's row-0 offset is `lane*laneHeight + baseOffset`, and each extra row
+  // adds `rowStep`. Since laneHeight is a whole multiple of rowStep, every
+  // lane's row stack lines up on a shared grid of "levels" spaced `rowStep`
+  // apart — level = lane*levelsPerLane + row. Tracking occupancy by *level*
+  // instead of by row-index-within-its-own-lane means two labels from
+  // *different* lanes that land on the same absolute row (which happens
+  // whenever one lane needs enough extra stagger to reach another lane's
+  // row-0) are still checked against each other, not just against same-lane
+  // neighbors.
+  const levelsPerLane = options.laneHeight / options.rowStep
   const sorted = [...candidates].sort((a, b) => a.axisPos - b.axisPos)
-  const rowEnds: number[] = []
+  const levelEnds = new Map<number, number>()
   const placements = new Map<string, LabelPlacement>()
   const overflow: LabelCandidate[] = []
 
   for (const c of sorted) {
     const left = c.axisPos - c.halfExtent
+    const startLevel = c.lane * levelsPerLane
     let row = -1
     for (let r = 0; r < maxRows; r++) {
-      if (rowEnds[r] === undefined || rowEnds[r] + ROW_PADDING <= left) {
+      const level = startLevel + r
+      const end = levelEnds.get(level)
+      const clearOfOtherLabels = end === undefined || end + ROW_PADDING <= left
+      if (clearOfOtherLabels && !rowBlockedByOtherLane(c, r, options)) {
         row = r
+        levelEnds.set(level, c.axisPos + c.halfExtent)
         break
       }
     }
     if (row === -1) {
       overflow.push(c)
     } else {
-      rowEnds[row] = c.axisPos + c.halfExtent
       placements.set(c.id, { id: c.id, row, displayAxisPos: c.axisPos })
     }
   }
