@@ -21,13 +21,13 @@
 
 ## 技術棧
 
-| 層級 | 工具 |
-|------|------|
-| 框架 | React 19 + TypeScript |
-| 建置 | Vite |
-| 狀態管理 | Zustand |
-| 樣式 | Tailwind CSS v4 |
-| Linter | Oxlint |
+| 層級     | 工具                  |
+| -------- | --------------------- |
+| 框架     | React 19 + TypeScript |
+| 建置     | Vite                  |
+| 狀態管理 | Zustand               |
+| 樣式     | Tailwind CSS v4       |
+| Linter   | Oxlint                |
 
 ---
 
@@ -51,29 +51,124 @@ npm run preview
 
 ## 資料格式
 
-時間軸資料儲存於 `src/data/timeline-data.json`，頂層結構如下：
+時間軸資料儲存於 `src/data/timeline-data.json`，可透過工具列的「匯出」按鈕取得目前狀態，「匯入」按鈕載入自訂資料。
+
+### 頂層結構
 
 ```jsonc
 {
-  "storylines": [
-    {
-      "id": "east",
-      "name": "東方文明",
-      "color": "#e07b39",
-      "position": "above",   // "above" | "below"
-      "order": 1,
-      "nodes": [
-        // 單一時間點
-        { "id": "qin-unification", "title": "秦滅六國", "time": "-0220", ... },
-        // 時間範圍
-        { "id": "han-dynasty", "title": "漢朝", "timeRange": { "start": "-0205", "end": "0220" }, ... }
-      ]
-    }
+  "storylines": [ /* Storyline[] */ ]
+}
+```
+
+---
+
+### Storyline
+
+| 欄位 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `id` | `string` | ✅ | 唯一識別碼，同一份資料內不可重複 |
+| `name` | `string` | ✅ | 故事線名稱，顯示於時間軸左側（水平模式）或上方（垂直模式） |
+| `color` | `string` | ✅ | 代表色，hex 格式（如 `"#e07b39"`），用於所有節點與連接線 |
+| `position` | `"above" \| "below"` | ✅ | 顯示於時間軸的上方或下方（垂直模式對應左側／右側） |
+| `order` | `number` | ✅ | 同側排列順序，數字越小越靠近主軸 |
+| `description` | `string` | ➖ | 故事線簡介（目前僅儲存，未顯示於 UI） |
+| `nodes` | `TimelineNode[]` | ✅ | 節點陣列 |
+
+```jsonc
+{
+  "id": "east-asia",
+  "name": "東方文明",
+  "color": "#e07b39",
+  "position": "above",
+  "order": 1,
+  "nodes": [ /* TimelineNode[] */ ]
+}
+```
+
+---
+
+### TimelineNode
+
+每個節點必須擇一填寫 `time`（時間點）或 `timeRange`（時間範圍），兩者不可同時存在。
+
+| 欄位 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `id` | `string` | ✅ | 唯一識別碼，同一份資料內不可重複 |
+| `title` | `string` | ✅ | 節點標題，顯示於時間軸上的標籤 |
+| `time` | `string` | ✅ ❹ | 單一時間點，格式見下方「時間格式」 |
+| `timeRange` | `{ start: string; end: string }` | ✅ ❹ | 時間範圍，`start` 和 `end` 均採相同時間格式 |
+| `description` | `string` | ➖ | 詳細說明，顯示於節點詳情卡片 |
+| `images` | `string[]` | ➖ | 圖片 URL 陣列 |
+| `links` | `NodeLink[]` | ➖ | 外部連結陣列，支援 YouTube / Wikipedia 預覽 |
+| `tags` | `string[]` | ➖ | 標籤陣列，供全域篩選使用 |
+| `nodeType` | `string` | ➖ | 節點類型標記（如 `"人物"`、`"戰役"`、`"政治事件"`），目前僅儲存，未用於篩選邏輯 |
+
+> ❹ `time` 與 `timeRange` 必須且只能擇一填寫。
+
+```jsonc
+// 時間點節點
+{
+  "id": "qin-unification",
+  "title": "秦滅六國，天下一統",
+  "time": "-0220",
+  "description": "前221年，秦滅齊國，六國盡滅...",
+  "tags": ["政治", "戰爭"],
+  "nodeType": "政治事件"
+}
+
+// 時間範圍節點
+{
+  "id": "han-dynasty",
+  "title": "漢朝",
+  "timeRange": { "start": "-0205", "end": "0220" },
+  "description": "劉邦建立漢朝...",
+  "tags": ["政治"],
+  "nodeType": "人物"
+}
+```
+
+---
+
+### NodeLink
+
+| 欄位 | 型別 | 必填 | 說明 |
+|------|------|------|------|
+| `url` | `string` | ✅ | 完整 URL |
+| `type` | `"youtube" \| "wiki" \| "generic"` | ✅ | 連結類型；`youtube` 顯示嵌入預覽，`wiki` 顯示 Wikipedia 摘要，`generic` 顯示純連結 |
+| `title` | `string` | ➖ | 連結顯示標題，未填時使用 URL |
+
+```jsonc
+{
+  "links": [
+    { "url": "https://zh.wikipedia.org/wiki/秦始皇", "type": "wiki" },
+    { "url": "https://www.youtube.com/watch?v=xxxxx", "type": "youtube", "title": "秦朝統一紀錄片" }
   ]
 }
 ```
 
-時間格式採 `YYYY`、`YYYY-MM` 或 `YYYY-MM-DD`，西元前年份以負號表示（天文紀年：西元前 1 年 = `-0000`，西元前 221 年 = `-0220`）。
+---
+
+### 時間格式
+
+所有時間字串（`time`、`timeRange.start`、`timeRange.end`）採用以下格式，粒度可選：
+
+| 格式 | 範例 | 說明 |
+|------|------|------|
+| `YYYY` | `"1949"` | 僅年份 |
+| `YYYY-MM` | `"1949-10"` | 年月 |
+| `YYYY-MM-DD` | `"1949-10-01"` | 年月日 |
+
+**西元前（BCE）年份** 採用**天文紀年**（Astronomical Year Numbering），以負號前綴表示：
+
+| 歷史年份 | 字串 | 說明 |
+|----------|------|------|
+| 西元前 1 年 | `"-0000"` | 天文年 0 |
+| 西元前 2 年 | `"-0001"` | 天文年 −1 |
+| 西元前 221 年 | `"-0220"` | 天文年 −220 |
+| 西元前 44 年 3 月 15 日 | `"-0043-03-15"` | 天文年 −43 |
+
+> **注意**：天文紀年的西元前年份 = `1 - 歷史年份`，例如歷史上的「西元前 221 年」對應天文年 `1 - 221 = -220`，因此字串為 `"-0220"`。
 
 ---
 
@@ -102,4 +197,3 @@ src/
 ## 授權
 
 [MIT](LICENSE) © 2026 Ray
-
