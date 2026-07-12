@@ -4,7 +4,7 @@ import {
   computeStorylineLayouts,
   totalExtent,
   LABEL_BASE_OFFSET,
-  LABEL_ROW_STEP,
+
   LANE_HEIGHT,
   HOVER_TOOLTIP_GAP,
 } from "../../lib/layout/timelineLayout";
