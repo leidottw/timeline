@@ -1,16 +1,47 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
-import { computeStorylineLayouts, totalExtent } from '../../lib/layout/timelineLayout'
+import { computeStorylineLayouts, totalExtent, LABEL_BASE_OFFSET } from '../../lib/layout/timelineLayout'
 import { generateTicks } from '../../lib/layout/ticks'
 import { formatYearLabel } from '../../lib/date/historicalDate'
 import { nodeMatchesTags } from '../../lib/filter/tagFilter'
 import { NodeDetailCard } from '../Node/NodeDetailCard'
 import type { Storyline, TimelineNode } from '../../types'
 
-const AXIS_LENGTH = 900
+/** fallback axis length before the container has been measured, and the fixed length used in vertical mode */
+const DEFAULT_AXIS_LENGTH = 900
+const MIN_AXIS_LENGTH = 400
 const MARGIN_START = 90
 const MARGIN_END = 30
 const AXIS_CROSS_MARGIN = 40
+/** vertical clearance reserved for axis tick labels, so adjacent storyline bands don't overlap them */
+const TICK_LABEL_CLEARANCE = 20
+
+/**
+ * Path for a range bar's pill shape, with only the truly-bounded ends
+ * rounded — an end that's been clipped to the visible edge gets a flat
+ * (square) edge instead, so a rounded cap never gets mistaken for a real
+ * start/end point.
+ */
+function capsuleBarPath(
+  xMin: number,
+  xMax: number,
+  yCenter: number,
+  thickness: number,
+  roundLeft: boolean,
+  roundRight: boolean
+): string {
+  const r = thickness / 2
+  const top = yCenter - r
+  const bottom = yCenter + r
+  const leftEdge = roundLeft ? xMin + r : xMin
+  const rightEdge = roundRight ? xMax - r : xMax
+  let d = `M ${leftEdge} ${top} L ${rightEdge} ${top}`
+  d += roundRight ? ` A ${r} ${r} 0 0 1 ${rightEdge} ${bottom}` : ` L ${xMax} ${bottom}`
+  d += ` L ${leftEdge} ${bottom}`
+  d += roundLeft ? ` A ${r} ${r} 0 0 1 ${leftEdge} ${top}` : ` L ${xMin} ${top}`
+  d += ' Z'
+  return d
+}
 
 export function Timeline() {
   const storylines = useTimelineStore((s) => s.storylines)
@@ -27,22 +58,58 @@ export function Timeline() {
     null
   )
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+  const [measuredWidth, setMeasuredWidth] = useState(DEFAULT_AXIS_LENGTH)
 
-  const { above, below } = useMemo(() => computeStorylineLayouts(storylines), [storylines])
-  const aboveExtent = totalExtent(above)
-  const belowExtent = totalExtent(below)
-
-  const crossLength = aboveExtent + belowExtent + AXIS_CROSS_MARGIN * 2
   const isHorizontal = orientation === 'horizontal'
-  const canvasW = isHorizontal ? MARGIN_START + AXIS_LENGTH + MARGIN_END : crossLength
-  const canvasH = isHorizontal ? crossLength : MARGIN_START + AXIS_LENGTH + MARGIN_END
 
+  // In horizontal mode the axis should fill the actual available width (not
+  // a fixed viewBox size) so it doesn't get letterboxed by the SVG's default
+  // aspect-ratio scaling when the page is wider than the fixed length.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width) setMeasuredWidth(width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const axisLength = isHorizontal ? Math.max(MIN_AXIS_LENGTH, measuredWidth - MARGIN_START - MARGIN_END) : DEFAULT_AXIS_LENGTH
   const span = viewportRange.end - viewportRange.start || 1
 
   function timeToPos(t: number): number {
     const fraction = (t - viewportRange.start) / span
-    return MARGIN_START + fraction * AXIS_LENGTH
+    return MARGIN_START + fraction * axisLength
   }
+
+  // Ticks render below the axis in horizontal mode, and to the left in
+  // vertical mode — reserve clearance on whichever side that lands on so
+  // storyline bands don't render on top of the tick label text.
+  const { above, below } = useMemo(
+    () =>
+      computeStorylineLayouts(storylines, {
+        timeToPos,
+        isHorizontal,
+        aboveReserved: isHorizontal ? 0 : TICK_LABEL_CLEARANCE,
+        belowReserved: isHorizontal ? TICK_LABEL_CLEARANCE : 0,
+        // keep labels from rendering past the plot edge, where the storyline
+        // title (left) or tick labels (right) live
+        axisBounds: { start: MARGIN_START + 4, end: MARGIN_START + axisLength - 4 },
+        // skip nodes entirely outside the current zoom/pan instead of
+        // rendering them (and their leader lines) far off-canvas
+        visibleRange: { start: viewportRange.start, end: viewportRange.end },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [storylines, isHorizontal, viewportRange.start, viewportRange.end]
+  )
+  const aboveExtent = totalExtent(above)
+  const belowExtent = totalExtent(below)
+
+  const crossLength = aboveExtent + belowExtent + AXIS_CROSS_MARGIN * 2
+  const canvasW = isHorizontal ? MARGIN_START + axisLength + MARGIN_END : crossLength
+  const canvasH = isHorizontal ? crossLength : MARGIN_START + axisLength + MARGIN_END
 
   function point(pos: number, offset: number): { x: number; y: number } {
     const axisCenter = aboveExtent + AXIS_CROSS_MARGIN
@@ -68,7 +135,7 @@ export function Timeline() {
       const localPos = isHorizontal ? e.clientX - rect.left : e.clientY - rect.top
       const scale = isHorizontal ? rect.width / canvasW : rect.height / canvasH
       const svgPos = localPos / scale
-      centerFraction = Math.min(1, Math.max(0, (svgPos - MARGIN_START) / AXIS_LENGTH))
+      centerFraction = Math.min(1, Math.max(0, (svgPos - MARGIN_START) / axisLength))
     }
     const newSpanRaw = span * factor
     const newSpan = Math.max(newSpanRaw, 0.5)
@@ -93,7 +160,7 @@ export function Timeline() {
       ? e.clientX - dragState.current.startX
       : e.clientY - dragState.current.startY
     const deltaSvg = deltaScreen / scale
-    const deltaTime = -(deltaSvg / AXIS_LENGTH) * (dragState.current.range.end - dragState.current.range.start)
+    const deltaTime = -(deltaSvg / axisLength) * (dragState.current.range.end - dragState.current.range.start)
     setViewportRange({
       start: dragState.current.range.start + deltaTime,
       end: dragState.current.range.end + deltaTime,
@@ -130,7 +197,7 @@ export function Timeline() {
             <line
               x1={MARGIN_START}
               y1={aboveExtent + AXIS_CROSS_MARGIN}
-              x2={MARGIN_START + AXIS_LENGTH}
+              x2={MARGIN_START + axisLength}
               y2={aboveExtent + AXIS_CROSS_MARGIN}
               stroke="var(--border-stronger, #999)"
               strokeWidth={1.5}
@@ -140,7 +207,7 @@ export function Timeline() {
               x1={aboveExtent + AXIS_CROSS_MARGIN}
               y1={MARGIN_START}
               x2={aboveExtent + AXIS_CROSS_MARGIN}
-              y2={MARGIN_START + AXIS_LENGTH}
+              y2={MARGIN_START + axisLength}
               stroke="var(--border-stronger, #999)"
               strokeWidth={1.5}
             />
@@ -205,7 +272,7 @@ export function Timeline() {
                   <line
                     x1={MARGIN_START}
                     y1={point(0, laneSign * trackOffset).y}
-                    x2={MARGIN_START + AXIS_LENGTH}
+                    x2={MARGIN_START + axisLength}
                     y2={point(0, laneSign * trackOffset).y}
                     stroke={layout.storyline.color}
                     strokeWidth={1}
@@ -216,25 +283,41 @@ export function Timeline() {
                     x1={point(0, laneSign * trackOffset).x}
                     y1={MARGIN_START}
                     x2={point(0, laneSign * trackOffset).x}
-                    y2={MARGIN_START + AXIS_LENGTH}
+                    y2={MARGIN_START + axisLength}
                     stroke={layout.storyline.color}
                     strokeWidth={1}
                     opacity={0.4}
                   />
                 )}
 
-                {/* nodes */}
-                {layout.lanedNodes.map(({ node, lane, start, end }) => {
+                {/* nodes — markers that visually collide are merged into a cluster badge below, so skip them here */}
+                {layout.lanedNodes
+                  .filter((n) => !n.clustered)
+                  .map(({ node, lane, start, end, labelOffset, labelShift, renderStartPos, renderEndPos }) => {
                   const matches = nodeMatchesTags(node, activeTags, tagMode)
                   const opacity = matches ? 1 : 0.15
                   const laneOffset = trackOffset + lane * 26
-                  const startPos = timeToPos(start)
-                  const endPos = timeToPos(end)
+                  // renderStartPos/renderEndPos are already clamped to the visible plot
+                  // area, so a range that runs off-screen is drawn clipped at the edge
+                  // instead of stretching (and dragging its leader line) off-canvas.
+                  const startPos = renderStartPos
+                  const endPos = renderEndPos
                   const isRange = node.timeRange !== undefined
-                  const centerPoint = point((startPos + endPos) / 2, laneSign * laneOffset)
+                  const axisPos = (startPos + endPos) / 2
+                  const centerPoint = point(axisPos, laneSign * laneOffset)
                   const p1 = point(startPos, laneSign * laneOffset)
                   const p2 = point(endPos, laneSign * laneOffset)
-                  const connectorEnd = point(isRange ? (startPos + endPos) / 2 : startPos, 0)
+                  const labelPoint = point(axisPos + labelShift, laneSign * (laneOffset + labelOffset))
+                  const needsLeader = labelOffset > LABEL_BASE_OFFSET || labelShift !== 0
+
+                  // A range end only counts as "real" if it wasn't clamped to the
+                  // visible edge — clipped ends get a flat cap, a fading fill, and
+                  // no leader line back to the axis (there's no true point to show).
+                  const trueStartPos = timeToPos(start)
+                  const trueEndPos = timeToPos(end)
+                  const startClipped = isRange && startPos > trueStartPos + 0.5
+                  const endClipped = isRange && endPos < trueEndPos - 0.5
+                  const gradientId = `range-fade-${node.id}`
 
                   return (
                     <g
@@ -248,29 +331,73 @@ export function Timeline() {
                       onMouseEnter={() => setHoveredNode(node.id)}
                       onMouseLeave={() => setHoveredNode((h) => (h === node.id ? null : h))}
                     >
-                      <line
-                        x1={connectorEnd.x}
-                        y1={connectorEnd.y}
-                        x2={centerPoint.x}
-                        y2={centerPoint.y}
-                        stroke={layout.storyline.color}
-                        strokeWidth={1}
-                        strokeDasharray="2,2"
-                        opacity={0.6}
-                      />
+                      {isRange ? (
+                        <>
+                          {!startClipped && (
+                            <line
+                              x1={point(trueStartPos, 0).x}
+                              y1={point(trueStartPos, 0).y}
+                              x2={p1.x}
+                              y2={p1.y}
+                              stroke={layout.storyline.color}
+                              strokeWidth={1}
+                              strokeDasharray="2,2"
+                              opacity={0.6}
+                            />
+                          )}
+                          {!endClipped && (
+                            <line
+                              x1={point(trueEndPos, 0).x}
+                              y1={point(trueEndPos, 0).y}
+                              x2={p2.x}
+                              y2={p2.y}
+                              stroke={layout.storyline.color}
+                              strokeWidth={1}
+                              strokeDasharray="2,2"
+                              opacity={0.6}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <line
+                          x1={point(startPos, 0).x}
+                          y1={point(startPos, 0).y}
+                          x2={centerPoint.x}
+                          y2={centerPoint.y}
+                          stroke={layout.storyline.color}
+                          strokeWidth={1}
+                          strokeDasharray="2,2"
+                          opacity={0.6}
+                        />
+                      )}
 
                       {isRange ? (
                         isHorizontal ? (
-                          <rect
-                            x={Math.min(p1.x, p2.x)}
-                            y={p1.y - 4}
-                            width={Math.max(Math.abs(p2.x - p1.x), 8)}
-                            height={8}
-                            rx={4}
-                            fill={layout.storyline.color}
-                            stroke="#0006"
-                            strokeWidth={0.5}
-                          />
+                          <>
+                            {(startClipped || endClipped) && (
+                              <defs>
+                                <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                                  <stop offset="0%" stopColor={layout.storyline.color} stopOpacity={startClipped ? 0.25 : 1} />
+                                  <stop offset={startClipped ? '15%' : '0%'} stopColor={layout.storyline.color} stopOpacity={1} />
+                                  <stop offset={endClipped ? '85%' : '100%'} stopColor={layout.storyline.color} stopOpacity={1} />
+                                  <stop offset="100%" stopColor={layout.storyline.color} stopOpacity={endClipped ? 0.25 : 1} />
+                                </linearGradient>
+                              </defs>
+                            )}
+                            <path
+                              d={capsuleBarPath(
+                                Math.min(p1.x, p2.x),
+                                Math.max(Math.min(p1.x, p2.x) + 8, Math.max(p1.x, p2.x)),
+                                p1.y,
+                                8,
+                                !startClipped,
+                                !endClipped
+                              )}
+                              fill={startClipped || endClipped ? `url(#${gradientId})` : layout.storyline.color}
+                              stroke="#0006"
+                              strokeWidth={0.5}
+                            />
+                          </>
                         ) : (
                           <rect
                             x={p1.x - 4}
@@ -287,20 +414,26 @@ export function Timeline() {
                         <circle cx={centerPoint.x} cy={centerPoint.y} r={6} fill={layout.storyline.color} stroke="#0006" strokeWidth={0.5} />
                       )}
 
-                      <text
-                        x={centerPoint.x}
-                        y={centerPoint.y + laneSign * -14}
-                        textAnchor="middle"
-                        fontSize={10}
-                        fill="#333"
-                      >
+                      {needsLeader && (
+                        <line
+                          x1={centerPoint.x}
+                          y1={centerPoint.y}
+                          x2={labelPoint.x}
+                          y2={labelPoint.y}
+                          stroke={layout.storyline.color}
+                          strokeWidth={0.75}
+                          strokeDasharray="1,2"
+                          opacity={0.5}
+                        />
+                      )}
+                      <text x={labelPoint.x} y={labelPoint.y} textAnchor="middle" fontSize={10} fill="#333">
                         {node.title}
                       </text>
 
                       {hoveredNode === node.id && (
                         <text
-                          x={centerPoint.x}
-                          y={centerPoint.y + laneSign * -26}
+                          x={labelPoint.x}
+                          y={labelPoint.y + laneSign * -12}
                           textAnchor="middle"
                           fontSize={9}
                           fill="#666"
@@ -310,6 +443,43 @@ export function Timeline() {
                             : formatYearLabel(start)}
                         </text>
                       )}
+                    </g>
+                  )
+                })}
+
+                {/* marker clusters — nodes whose markers genuinely overlap on screen, merged into one badge; click to zoom in and let them spread apart */}
+                {layout.clusters.map((cluster) => {
+                  const axisPos = Math.min(Math.max(timeToPos(cluster.center), MARGIN_START), MARGIN_START + axisLength)
+                  const clusterLaneOffset = trackOffset + cluster.lane * 26
+                  const badgePoint = point(axisPos, laneSign * clusterLaneOffset)
+                  const pad = Math.max((cluster.end - cluster.start) * 0.4, 1)
+                  return (
+                    <g
+                      key={cluster.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setViewportRange({ start: cluster.start - pad, end: cluster.end + pad })
+                      }}
+                    >
+                      <circle
+                        cx={badgePoint.x}
+                        cy={badgePoint.y}
+                        r={9}
+                        fill="#fff"
+                        stroke={layout.storyline.color}
+                        strokeWidth={1.5}
+                      />
+                      <text
+                        x={badgePoint.x}
+                        y={badgePoint.y + 3}
+                        textAnchor="middle"
+                        fontSize={9}
+                        fontWeight={600}
+                        fill={layout.storyline.color}
+                      >
+                        +{cluster.nodeIds.length}
+                      </text>
                     </g>
                   )
                 })}
