@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
 import type { TimelineData } from '../../types'
+import { parseTimelineData } from '../../lib/validation/timelineData'
 import { StorylineEditor } from '../Editor/StorylineEditor'
 
 export function Toolbar() {
@@ -16,9 +17,15 @@ export function Toolbar() {
   const resetViewport = useTimelineStore((s) => s.resetViewport)
   const storylines = useTimelineStore((s) => s.storylines)
   const loadData = useTimelineStore((s) => s.loadData)
+  const resetToDefault = useTimelineStore((s) => s.resetToDefault)
+  const undo = useTimelineStore((s) => s.undo)
+  const redo = useTimelineStore((s) => s.redo)
+  const canUndo = useTimelineStore((s) => s.past.length > 0)
+  const canRedo = useTimelineStore((s) => s.future.length > 0)
 
   const [showEditor, setShowEditor] = useState(false)
   const [showTagPicker, setShowTagPicker] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const tagPickerRef = useRef<HTMLDivElement>(null)
 
@@ -33,8 +40,21 @@ export function Toolbar() {
     return () => document.removeEventListener('pointerdown', handlePointerDown)
   }, [showTagPicker])
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [redo, undo])
+
   function exportJson() {
-    const data: TimelineData = { storylines }
+    const data: TimelineData = { schemaVersion: 1, storylines }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -47,13 +67,24 @@ export function Toolbar() {
   function importJson(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    setMessage(null)
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'error', text: '檔案超過 5 MB，請縮小後再匯入。' })
+      e.target.value = ''
+      return
+    }
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result as string) as TimelineData
+        const data = parseTimelineData(JSON.parse(reader.result as string))
+        if (!window.confirm(`匯入後將以 ${data.storylines.length} 條故事線取代目前資料，確定繼續？`)) return
         loadData(data)
-      } catch {
-        alert('JSON 檔案格式錯誤，無法匯入。')
+        setMessage({ type: 'success', text: '資料已匯入並自動儲存。' })
+      } catch (error) {
+        setMessage({
+          type: 'error',
+          text: error instanceof Error ? `匯入失敗：${error.message}` : 'JSON 檔案格式錯誤。',
+        })
       }
     }
     reader.readAsText(file)
@@ -65,7 +96,7 @@ export function Toolbar() {
       <span className="mr-2 text-[15px] font-medium">歷史時間軸</span>
 
       <div className="relative" ref={tagPickerRef}>
-        <div className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-2.5 py-1.5">
+        <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-md bg-neutral-100 px-2.5 py-1.5">
           <i className="ti ti-filter text-[15px] text-neutral-500" aria-hidden="true" />
           <span className="text-xs text-neutral-500">篩選:</span>
           {activeTags.length === 0 && (
@@ -85,6 +116,7 @@ export function Toolbar() {
           <button
             onClick={() => setShowTagPicker((v) => !v)}
             className="text-xs text-neutral-400 hover:text-neutral-700"
+            aria-expanded={showTagPicker}
           >
             + 新增標籤
           </button>
@@ -128,6 +160,28 @@ export function Toolbar() {
       </div>
 
       <div className="flex-1" />
+
+      <div className="flex items-center gap-1 rounded-md bg-neutral-100 px-2 py-1.5">
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className="toolbar-icon-button"
+          aria-label="復原"
+          title="復原（Ctrl/⌘ Z）"
+        >
+          <i className="ti ti-arrow-back-up text-[15px]" aria-hidden="true" />
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className="toolbar-icon-button"
+          aria-label="重做"
+          title="重做（Ctrl/⌘ Shift Z）"
+        >
+          <i className="ti ti-arrow-forward-up text-[15px]" aria-hidden="true" />
+        </button>
+        <span className="ml-1 text-[10px] text-emerald-700">自動儲存</span>
+      </div>
 
       <div className="flex items-center gap-1.5 rounded-md bg-neutral-100 px-2 py-1.5 text-xs">
         <button
@@ -186,6 +240,27 @@ export function Toolbar() {
         <i className="ti ti-plus text-sm" aria-hidden="true" />
         新增故事線
       </button>
+
+      <button
+        onClick={() => {
+          if (window.confirm('確定恢復內建示範資料？目前內容仍可使用復原取回。')) {
+            resetToDefault()
+            setMessage({ type: 'success', text: '已恢復示範資料，可使用復原取回先前內容。' })
+          }
+        }}
+        className="text-xs text-neutral-400 hover:text-red-600"
+      >
+        恢復預設
+      </button>
+
+      {message && (
+        <p
+          className={`w-full text-right text-xs ${message.type === 'error' ? 'text-red-600' : 'text-emerald-700'}`}
+          role={message.type === 'error' ? 'alert' : 'status'}
+        >
+          {message.text}
+        </p>
+      )}
 
       {showEditor && <StorylineEditor onClose={() => setShowEditor(false)} />}
     </div>

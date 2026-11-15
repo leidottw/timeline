@@ -1,6 +1,8 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import type { Orientation, Storyline, TagMode, TimelineData, TimelineNode, ViewportRange } from '../types'
 import { getNodeSpan } from '../lib/date/historicalDate'
+import { parseTimelineData } from '../lib/validation/timelineData'
 import initialData from '../data/timeline-data.json'
 
 /** smallest allowed viewport span (max zoom-in) */
@@ -71,6 +73,8 @@ interface TimelineState {
   tagMode: TagMode
   focusedNodeId: string | null
   allTags: string[]
+  past: Storyline[][]
+  future: Storyline[][]
 
   setViewportRange: (range: ViewportRange) => void
   resetViewport: () => void
@@ -88,6 +92,9 @@ interface TimelineState {
   updateNode: (storylineId: string, nodeId: string, patch: Partial<TimelineNode>) => void
   removeNode: (storylineId: string, nodeId: string) => void
   loadData: (data: TimelineData) => void
+  resetToDefault: () => void
+  undo: () => void
+  redo: () => void
   hydrateFromParams: (params: {
     tags?: string[]
     tagMode?: TagMode
@@ -102,18 +109,34 @@ const initialFullRange = computeFullRange(initialStorylines)
 const initialPanBounds = computePanBounds(initialStorylines)
 
 /** Recompute the data-derived ranges after any edit to storylines/nodes, re-clamping the current viewport in case it no longer fits. */
-function withRecomputedRanges(storylines: Storyline[], viewportRange: ViewportRange) {
+function withRecomputedRanges(
+  storylines: Storyline[],
+  viewportRange: ViewportRange,
+  activeTags?: string[]
+) {
   const panBounds = computePanBounds(storylines)
+  const allTags = collectAllTags(storylines)
   return {
     storylines,
     fullRange: computeFullRange(storylines),
     panBounds,
     viewportRange: clampViewportRange(viewportRange, panBounds),
-    allTags: collectAllTags(storylines),
+    allTags,
+    ...(activeTags ? { activeTags: activeTags.filter((tag) => allTags.includes(tag)) } : {}),
   }
 }
 
-export const useTimelineStore = create<TimelineState>((set, get) => ({
+const HISTORY_LIMIT = 50
+
+function commitStorylines(state: TimelineState, storylines: Storyline[]) {
+  return {
+    ...withRecomputedRanges(storylines, state.viewportRange, state.activeTags),
+    past: [...state.past, state.storylines].slice(-HISTORY_LIMIT),
+    future: [],
+  }
+}
+
+export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
   storylines: initialStorylines,
   fullRange: initialFullRange,
   panBounds: initialPanBounds,
@@ -123,6 +146,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   tagMode: 'or',
   focusedNodeId: null,
   allTags: collectAllTags(initialStorylines),
+  past: [],
+  future: [],
 
   setViewportRange: (range) => set((state) => ({ viewportRange: clampViewportRange(range, state.panBounds) })),
 
@@ -166,64 +191,103 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   setFocusedNodeId: (id) => set({ focusedNodeId: id }),
 
   addStoryline: (s) =>
-    set((state) => withRecomputedRanges([...state.storylines, s], state.viewportRange)),
+    set((state) => commitStorylines(state, [...state.storylines, s])),
 
   updateStoryline: (id, patch) =>
-    set((state) => ({
-      storylines: state.storylines.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-    })),
-
-  removeStoryline: (id) =>
     set((state) =>
-      withRecomputedRanges(
-        state.storylines.filter((s) => s.id !== id),
-        state.viewportRange
+      commitStorylines(
+        state,
+        state.storylines.map((s) => (s.id === id ? { ...s, ...patch } : s))
       )
     ),
 
+  removeStoryline: (id) =>
+    set((state) => ({
+      ...commitStorylines(state, state.storylines.filter((s) => s.id !== id)),
+      focusedNodeId: state.storylines
+        .find((storyline) => storyline.id === id)
+        ?.nodes.some((node) => node.id === state.focusedNodeId)
+        ? null
+        : state.focusedNodeId,
+    })),
+
   addNode: (storylineId, node) =>
     set((state) =>
-      withRecomputedRanges(
+      commitStorylines(
+        state,
         state.storylines.map((s) => (s.id === storylineId ? { ...s, nodes: [...s.nodes, node] } : s)),
-        state.viewportRange
       )
     ),
 
   updateNode: (storylineId, nodeId, patch) =>
     set((state) =>
-      withRecomputedRanges(
+      commitStorylines(
+        state,
         state.storylines.map((s) =>
           s.id === storylineId
             ? { ...s, nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)) }
             : s
-        ),
-        state.viewportRange
+        )
       )
     ),
 
   removeNode: (storylineId, nodeId) =>
     set((state) => ({
-      ...withRecomputedRanges(
+      ...commitStorylines(
+        state,
         state.storylines.map((s) =>
           s.id === storylineId ? { ...s, nodes: s.nodes.filter((n) => n.id !== nodeId) } : s
-        ),
-        state.viewportRange
+        )
       ),
       focusedNodeId: state.focusedNodeId === nodeId ? null : state.focusedNodeId,
     })),
 
   loadData: (data) => {
     const fullRange = computeFullRange(data.storylines)
-    set({
-      storylines: data.storylines,
+    set((state) => ({
+      ...commitStorylines(state, data.storylines),
       fullRange,
-      panBounds: computePanBounds(data.storylines),
       viewportRange: fullRange,
-      allTags: collectAllTags(data.storylines),
       activeTags: [],
       focusedNodeId: null,
-    })
+    }))
   },
+
+  resetToDefault: () => {
+    const storylines = initialData.storylines as Storyline[]
+    const fullRange = computeFullRange(storylines)
+    set((state) => ({
+      ...commitStorylines(state, storylines),
+      fullRange,
+      viewportRange: fullRange,
+      activeTags: [],
+      focusedNodeId: null,
+    }))
+  },
+
+  undo: () =>
+    set((state) => {
+      const previous = state.past.at(-1)
+      if (!previous) return state
+      return {
+        ...withRecomputedRanges(previous, state.viewportRange, state.activeTags),
+        past: state.past.slice(0, -1),
+        future: [state.storylines, ...state.future].slice(0, HISTORY_LIMIT),
+        focusedNodeId: null,
+      }
+    }),
+
+  redo: () =>
+    set((state) => {
+      const next = state.future[0]
+      if (!next) return state
+      return {
+        ...withRecomputedRanges(next, state.viewportRange, state.activeTags),
+        past: [...state.past, state.storylines].slice(-HISTORY_LIMIT),
+        future: state.future.slice(1),
+        focusedNodeId: null,
+      }
+    }),
 
   hydrateFromParams: ({ tags, tagMode, range, orientation, focus }) => {
     set((state) => ({
@@ -233,5 +297,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       ...(orientation ? { orientation } : {}),
       ...(focus ? { focusedNodeId: focus } : {}),
     }))
+  },
+}), {
+  name: 'historical-timeline-data',
+  version: 1,
+  partialize: (state) => ({ storylines: state.storylines }),
+  merge: (persistedState, currentState) => {
+    try {
+      const persisted = persistedState as { storylines?: unknown }
+      const data = parseTimelineData({ storylines: persisted.storylines })
+      const fullRange = computeFullRange(data.storylines)
+      return {
+        ...currentState,
+        ...withRecomputedRanges(data.storylines, fullRange),
+        viewportRange: fullRange,
+        past: [],
+        future: [],
+      }
+    } catch {
+      return currentState
+    }
   },
 }))
