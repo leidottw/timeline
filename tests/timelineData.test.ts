@@ -7,7 +7,26 @@ import { parseTimelineData } from '../src/lib/validation/timelineData.ts'
 test('bundled timeline data satisfies the public schema', () => {
   const raw = readFileSync(new URL('../src/data/timeline-data.json', import.meta.url), 'utf8')
   const data = parseTimelineData(JSON.parse(raw))
-  assert.equal(data.storylines.reduce((total, storyline) => total + storyline.nodes.length, 0), 168)
+  const nodes = data.storylines.flatMap((storyline) => storyline.nodes)
+  assert.equal(nodes.length, 168)
+  assert.equal(nodes.some((node) => Object.hasOwn(node, 'nodeType')), false)
+  assert.ok(nodes.some((node) => node.tags?.includes('人物')))
+})
+
+test('legacy nodeType values migrate into tags without duplication', () => {
+  const data = parseTimelineData({
+    storylines: [{
+      id: 'history',
+      name: '歷史',
+      color: '#2563eb',
+      position: 'above',
+      order: 1,
+      nodes: [{ id: 'person', title: '人物', time: '2024', tags: ['人物'], nodeType: '人物' }],
+    }],
+  })
+  const node = data.storylines[0].nodes[0]
+  assert.deepEqual(node.tags, ['人物'])
+  assert.equal(Object.hasOwn(node, 'nodeType'), false)
 })
 
 test('validates real calendar dates, including leap years', () => {

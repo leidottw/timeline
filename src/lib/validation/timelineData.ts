@@ -49,8 +49,16 @@ function validateNode(value: unknown, path: string, ids: Set<string>): asserts v
   }
 
   if (node.description !== undefined) assert(typeof node.description === 'string', `${path}.description 必須是文字`)
-  if (node.nodeType !== undefined) assert(typeof node.nodeType === 'string', `${path}.nodeType 必須是文字`)
   assertOptionalStringArray(node.tags, `${path}.tags`)
+
+  // Backward compatibility: older exports stored a single nodeType value.
+  // Fold it into tags so importing or hydrating old data does not lose meaning.
+  if (node.nodeType !== undefined) {
+    assert(typeof node.nodeType === 'string', `${path}.nodeType 必須是文字`)
+    const legacyType = node.nodeType.trim()
+    if (legacyType) node.tags = Array.from(new Set([...(node.tags ?? []), legacyType]))
+    delete node.nodeType
+  }
   assertOptionalStringArray(node.images, `${path}.images`)
   node.images?.forEach((image, index) => assertHttpUrl(image, `${path}.images[${index}]`))
 

@@ -25,7 +25,6 @@ export function NodeEditor({
   const [rangeEnd, setRangeEnd] = useState(node?.timeRange?.end ?? '')
   const [description, setDescription] = useState(node?.description ?? '')
   const [tagsInput, setTagsInput] = useState((node?.tags ?? []).join(', '))
-  const [nodeType, setNodeType] = useState(node?.nodeType ?? '')
   const [imagesInput, setImagesInput] = useState((node?.images ?? []).join('\n'))
   const [links, setLinks] = useState<NodeLink[]>(node?.links ?? [])
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +82,6 @@ export function NodeEditor({
         : { time: time.trim(), timeRange: undefined }),
       description: description.trim() || undefined,
       tags: tags.length > 0 ? tags : undefined,
-      nodeType: nodeType.trim() || undefined,
       images: images.length > 0 ? images : undefined,
       links: normalizedLinks.length > 0 ? normalizedLinks : undefined,
     }
@@ -202,16 +200,10 @@ export function NodeEditor({
           />
         </label>
 
-        <div className="mb-2.5 grid grid-cols-2 gap-2">
-          <label className="text-xs text-neutral-600">
-            節點類型（選填）
-            <input value={nodeType} onChange={(e) => setNodeType(e.target.value)} className="form-control mt-1" placeholder="人物、戰役…" />
-          </label>
-          <label className="text-xs text-neutral-600">
-            圖片網址（每行一個）
-            <textarea value={imagesInput} onChange={(e) => setImagesInput(e.target.value)} rows={2} className="form-control mt-1" placeholder="https://" />
-          </label>
-        </div>
+        <label className="mb-2.5 block text-xs text-neutral-600">
+          圖片網址（每行一個）
+          <textarea value={imagesInput} onChange={(e) => setImagesInput(e.target.value)} rows={2} className="form-control mt-1" placeholder="https://" />
+        </label>
 
         <fieldset className="mb-4 rounded-lg border border-neutral-200 p-3">
           <legend className="sr-only">外部連結（選填）</legend>

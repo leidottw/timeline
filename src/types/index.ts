@@ -16,7 +16,6 @@ export interface TimelineNode {
   images?: string[]
   links?: NodeLink[]
   tags?: string[]
-  nodeType?: string
 }
 
 export type StorylinePosition = 'above' | 'below'
