@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTimelineStore } from '../../store/useTimelineStore'
 import type { Storyline, StorylinePosition } from '../../types'
 
@@ -16,12 +16,32 @@ export function StorylineEditor({
   const updateStoryline = useTimelineStore((s) => s.updateStoryline)
   const storylines = useTimelineStore((s) => s.storylines)
   const isEditing = Boolean(storyline)
+  const defaultPosition = storyline?.position ?? 'above'
+  const defaultOrder = Math.max(
+    0,
+    ...storylines.filter((item) => item.position === defaultPosition).map((item) => item.order)
+  ) + 1
 
   const [name, setName] = useState(storyline?.name ?? '')
-  const [position, setPosition] = useState<StorylinePosition>(storyline?.position ?? 'above')
-  const [order, setOrder] = useState(storyline?.order ?? 1)
+  const [position, setPosition] = useState<StorylinePosition>(defaultPosition)
+  const [order, setOrder] = useState(storyline?.order ?? defaultOrder)
   const [color, setColor] = useState(storyline?.color ?? PALETTE[storylines.length % PALETTE.length])
   const [description, setDescription] = useState(storyline?.description ?? '')
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus()
+    }
+  }, [onClose])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -36,14 +56,12 @@ export function StorylineEditor({
         description: description.trim() || undefined,
       })
     } else {
-      const sameSide = storylines.filter((s) => s.position === position)
-      const newOrder = sameSide.length > 0 ? Math.max(...sameSide.map((s) => s.order)) + 1 : 1
       addStoryline({
-        id: `storyline-${Date.now()}`,
+        id: `storyline-${crypto.randomUUID()}`,
         name: name.trim(),
         color,
         position,
-        order: newOrder,
+        order,
         description: description.trim() || undefined,
         nodes: [],
       })
@@ -60,10 +78,13 @@ export function StorylineEditor({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="w-80 rounded-xl bg-white p-5 shadow-lg"
+        className="mx-4 w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="storyline-editor-title"
       >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-medium">{isEditing ? '編輯故事線' : '新增故事線'}</h3>
+          <h3 id="storyline-editor-title" className="text-base font-semibold">{isEditing ? '編輯故事線' : '新增故事線'}</h3>
           <button type="button" onClick={onClose} aria-label="關閉">
             <i className="ti ti-x text-neutral-400" aria-hidden="true" />
           </button>
@@ -75,8 +96,9 @@ export function StorylineEditor({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="例如：三國"
-            className="mt-1 w-full"
+            className="form-control mt-1"
             autoFocus
+            required
           />
         </label>
 
@@ -84,8 +106,14 @@ export function StorylineEditor({
           位置
           <select
             value={position}
-            onChange={(e) => setPosition(e.target.value as StorylinePosition)}
-            className="mt-1 w-full"
+            onChange={(e) => {
+              const nextPosition = e.target.value as StorylinePosition
+              setPosition(nextPosition)
+              if (!isEditing) {
+                setOrder(Math.max(0, ...storylines.filter((item) => item.position === nextPosition).map((item) => item.order)) + 1)
+              }
+            }}
+            className="form-control mt-1"
           >
             <option value="above">上方（水平模式）/ 左側（垂直模式）</option>
             <option value="below">下方（水平模式）/ 右側（垂直模式）</option>
@@ -99,7 +127,7 @@ export function StorylineEditor({
             min={1}
             value={order}
             onChange={(e) => setOrder(Number(e.target.value) || 1)}
-            className="mt-1 w-full"
+            className="form-control mt-1"
           />
         </label>
 
@@ -125,15 +153,15 @@ export function StorylineEditor({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
-            className="mt-1 w-full"
+            className="form-control mt-1"
           />
         </label>
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="text-xs">
+          <button type="button" onClick={onClose} className="btn-secondary">
             取消
           </button>
-          <button type="submit" className="text-xs font-medium">
+          <button type="submit" className="btn-primary">
             {isEditing ? '儲存變更' : '建立故事線'}
           </button>
         </div>

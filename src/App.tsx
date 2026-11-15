@@ -9,7 +9,7 @@ function App() {
   const orientation = useTimelineStore((s) => s.orientation)
   // Horizontal mode benefits from using the full viewport width (more room
   // per pixel-year, less crowding); vertical mode stays capped for readability.
-  const containerClass = orientation === 'horizontal' ? 'w-full px-4' : 'mx-auto max-w-6xl'
+  const containerClass = orientation === 'horizontal' ? 'w-full px-2 sm:px-4' : 'mx-auto max-w-6xl px-2 sm:px-0'
 
   return (
     <div className={containerClass}>

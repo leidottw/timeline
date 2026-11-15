@@ -77,7 +77,7 @@ function StorylineChip({
 
       <button
         onClick={onToggleExpand}
-        className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800"
         title={expanded ? '收合節點清單' : '展開節點清單'}
         aria-label={expanded ? '收合節點清單' : '展開節點清單'}
         aria-expanded={expanded}
@@ -86,7 +86,7 @@ function StorylineChip({
       </button>
       <button
         onClick={onEdit}
-        className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800"
         title="編輯故事線"
         aria-label="編輯故事線"
       >
@@ -94,7 +94,7 @@ function StorylineChip({
       </button>
       <button
         onClick={onAddNode}
-        className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-800"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800"
         title="新增節點"
         aria-label="新增節點"
       >
@@ -102,7 +102,7 @@ function StorylineChip({
       </button>
       <button
         onClick={onRemove}
-        className="flex h-5 w-5 shrink-0 items-center justify-center text-neutral-400 hover:text-red-600"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-red-50 hover:text-red-600"
         title="刪除故事線"
         aria-label="刪除故事線"
       >
@@ -165,7 +165,11 @@ export function StorylineLegend() {
           onClosePopover={() => setExpandedId(null)}
           onEdit={() => setEditStoryline(s)}
           onAddNode={() => setAddNodeFor(s)}
-          onRemove={() => removeStoryline(s.id)}
+          onRemove={() => {
+            if (window.confirm(`確定刪除「${s.name}」及其中 ${s.nodes.length} 個節點？此操作可以復原。`)) {
+              removeStoryline(s.id)
+            }
+          }}
           onEditNode={(node) => setEditNodeFor({ storyline: s, node })}
         />
       ))}
