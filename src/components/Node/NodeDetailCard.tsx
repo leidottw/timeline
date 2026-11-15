@@ -26,9 +26,9 @@ export function NodeDetailCard({
   const toggleTag = useTimelineStore((s) => s.toggleTag);
 
   return (
-    <div className="w-72 rounded-xl border border-black/10 bg-white p-4 shadow-lg">
+    <div className="node-detail-card w-72 max-w-full rounded-xl border border-black/10 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-neutral-900">
+        <span className="text-sm font-semibold leading-snug text-neutral-900">
           {node.title}
         </span>
         <button
@@ -45,7 +45,7 @@ export function NodeDetailCard({
       </p>
 
       {node.description && (
-        <p className="mb-2.5 text-xs leading-relaxed text-neutral-800">
+        <p className="mb-3 text-xs leading-relaxed text-neutral-800">
           {node.description}
         </p>
       )}

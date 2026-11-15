@@ -3,25 +3,52 @@ import { useTimelineStore } from "../../store/useTimelineStore";
 import {
   computeStorylineLayouts,
   totalExtent,
-  LABEL_BASE_OFFSET,
-  LANE_HEIGHT,
-  HOVER_TOOLTIP_GAP,
+  TIMELINE_METRICS,
 } from "../../lib/layout/timelineLayout";
 import { generateTicks } from "../../lib/layout/ticks";
 import { measureTextWidth } from "../../lib/layout/labelStagger";
-import { formatYearLabel } from "../../lib/date/historicalDate";
+import {
+  formatHistoricalDate,
+  formatTimelineTick,
+} from "../../lib/date/historicalDate";
 import { nodeMatchesTags } from "../../lib/filter/tagFilter";
+import {
+  clampCanvasOffset,
+  clampViewportRange,
+  panViewportRange,
+  zoomViewportRange,
+} from "../../lib/viewport/range";
 import { NodeDetailCard } from "../Node/NodeDetailCard";
-import type { Storyline, TimelineNode } from "../../types";
+import type {
+  Storyline,
+  TimelineNode,
+  ViewportRange,
+  WorkspaceMode,
+} from "../../types";
 
-/** fallback axis length before the container has been measured, and the fixed length used in vertical mode */
+/** fallback axis length before the container has been measured */
 const DEFAULT_AXIS_LENGTH = 900;
 const MIN_AXIS_LENGTH = 400;
-const MARGIN_START = 90;
-const MARGIN_END = 30;
-const AXIS_CROSS_MARGIN = 40;
-/** vertical clearance reserved for axis tick labels, so adjacent storyline bands don't overlap them */
-const TICK_LABEL_CLEARANCE = 20;
+
+function truncateTextToWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+): string {
+  if (measureTextWidth(text, fontSize) <= maxWidth) return text;
+
+  const characters = Array.from(text);
+  const ellipsis = "…";
+  let low = 0;
+  let high = characters.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const candidate = `${characters.slice(0, middle).join("")}${ellipsis}`;
+    if (measureTextWidth(candidate, fontSize) <= maxWidth) low = middle;
+    else high = middle - 1;
+  }
+  return `${characters.slice(0, low).join("")}${ellipsis}`;
+}
 
 /**
  * Path for a range bar's pill shape, with only the truly-bounded ends
@@ -54,33 +81,95 @@ function capsuleBarPath(
   return d;
 }
 
-export function Timeline() {
+export function Timeline({
+  mode,
+  selectedNodeId,
+  focusRequest,
+  onSelectNode,
+}: {
+  mode: WorkspaceMode;
+  selectedNodeId: string | null;
+  focusRequest: { nodeId: string; version: number };
+  onSelectNode: (storylineId: string, nodeId: string) => void;
+}) {
   const storylines = useTimelineStore((s) => s.storylines);
   const viewportRange = useTimelineStore((s) => s.viewportRange);
+  const panBounds = useTimelineStore((s) => s.panBounds);
   const setViewportRange = useTimelineStore((s) => s.setViewportRange);
-  const orientation = useTimelineStore((s) => s.orientation);
+  const animateViewportRange = useTimelineStore((s) => s.animateViewportRange);
+  const viewportAnimationVersion = useTimelineStore(
+    (s) => s.viewportAnimationVersion,
+  );
+  const displayDensity = useTimelineStore((s) => s.displayDensity);
+  const hiddenStorylineIds = useTimelineStore((s) => s.hiddenStorylineIds);
+  const toggleStorylineVisibility = useTimelineStore(
+    (s) => s.toggleStorylineVisibility,
+  );
+  const canvasResetVersion = useTimelineStore((s) => s.canvasResetVersion);
   const activeTags = useTimelineStore((s) => s.activeTags);
   const tagMode = useTimelineStore((s) => s.tagMode);
   const focusedNodeId = useTimelineStore((s) => s.focusedNodeId);
   const setFocusedNodeId = useTimelineStore((s) => s.setFocusedNodeId);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const dragState = useRef<{
     startX: number;
     startY: number;
-    range: typeof viewportRange;
+    range: ViewportRange;
+    crossOffset: number;
   } | null>(null);
   const dragFrame = useRef<number | null>(null);
-  const pendingDragRange = useRef<typeof viewportRange | null>(null);
+  const pendingDragRange = useRef<ViewportRange | null>(null);
+  const pendingCrossOffset = useRef<number | null>(null);
+  const viewportAnimationFrame = useRef<number | null>(null);
+  const renderedViewportRangeRef = useRef(viewportRange);
+  const lastViewportAnimationVersion = useRef(viewportAnimationVersion);
+  const appliedFocusVersion = useRef(-1);
+  const appliedNodeFocusVersion = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [renderedViewportRange, setRenderedViewportRange] =
+    useState(viewportRange);
+  const [crossOffset, setCrossOffset] = useState(0);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState(DEFAULT_AXIS_LENGTH);
+  const [measuredHeight, setMeasuredHeight] = useState(0);
   // Node IDs to show when a permanent cluster (same-time points) is clicked.
   const [focusedClusterNodeIds, setFocusedClusterNodeIds] = useState<
     string[] | null
   >(null);
 
-  const isHorizontal = orientation === "horizontal";
+  const metrics = TIMELINE_METRICS[displayDensity];
+  const baseMarginStart = displayDensity === "comfortable" ? 110 : 90;
+  const widestStorylineLabel = useMemo(
+    () =>
+      Math.max(
+        0,
+        ...storylines.map((storyline) =>
+          measureTextWidth(storyline.name, metrics.storylineFontSize),
+        ),
+      ),
+    [metrics.storylineFontSize, storylines],
+  );
+  const storylineLabelMaxWidth = Math.max(
+    48,
+    Math.min(widestStorylineLabel, 240, measuredWidth * 0.3),
+  );
+  const marginStart = Math.max(
+    baseMarginStart,
+    Math.ceil(storylineLabelMaxWidth + 38),
+  );
+  const marginEnd = displayDensity === "comfortable" ? 36 : 30;
+  const axisCrossMargin = displayDensity === "comfortable" ? 48 : 40;
+  const crossPanPadding = displayDensity === "comfortable" ? 48 : 40;
+  const tickLabelClearance = displayDensity === "comfortable" ? 26 : 20;
+  const visibleStorylines = useMemo(
+    () =>
+      storylines.filter(
+        (storyline) => !hiddenStorylineIds.includes(storyline.id),
+      ),
+    [hiddenStorylineIds, storylines],
+  );
 
   // In horizontal mode the axis should fill the actual available width (not
   // a fixed viewBox size) so it doesn't get letterboxed by the SVG's default
@@ -90,7 +179,9 @@ export function Timeline() {
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
+      const height = entries[0]?.contentRect.height;
       if (width) setMeasuredWidth(width);
+      if (height) setMeasuredHeight(height);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -99,39 +190,104 @@ export function Timeline() {
   useEffect(
     () => () => {
       if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
+      if (viewportAnimationFrame.current !== null) {
+        cancelAnimationFrame(viewportAnimationFrame.current);
+      }
     },
     [],
   );
 
-  const axisLength = isHorizontal
-    ? Math.max(MIN_AXIS_LENGTH, measuredWidth - MARGIN_START - MARGIN_END)
-    : DEFAULT_AXIS_LENGTH;
-  const span = viewportRange.end - viewportRange.start || 1;
+  useEffect(() => {
+    if (viewportAnimationFrame.current !== null) {
+      cancelAnimationFrame(viewportAnimationFrame.current);
+      viewportAnimationFrame.current = null;
+    }
+
+    const target = {
+      start: viewportRange.start,
+      end: viewportRange.end,
+    };
+    const shouldAnimate =
+      lastViewportAnimationVersion.current !== viewportAnimationVersion &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    lastViewportAnimationVersion.current = viewportAnimationVersion;
+
+    if (!shouldAnimate) {
+      renderedViewportRangeRef.current = target;
+      setRenderedViewportRange(target);
+      return;
+    }
+
+    const start = renderedViewportRangeRef.current;
+    const startedAt = performance.now();
+    const duration = 300;
+
+    function animate(now: number) {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased =
+        progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      const next = {
+        start: start.start + (target.start - start.start) * eased,
+        end: start.end + (target.end - start.end) * eased,
+      };
+      renderedViewportRangeRef.current = next;
+      setRenderedViewportRange(next);
+
+      if (progress < 1) {
+        viewportAnimationFrame.current = requestAnimationFrame(animate);
+      } else {
+        viewportAnimationFrame.current = null;
+      }
+    }
+
+    viewportAnimationFrame.current = requestAnimationFrame(animate);
+    return () => {
+      if (viewportAnimationFrame.current !== null) {
+        cancelAnimationFrame(viewportAnimationFrame.current);
+        viewportAnimationFrame.current = null;
+      }
+    };
+  }, [
+    viewportAnimationVersion,
+    viewportRange.end,
+    viewportRange.start,
+  ]);
+
+  const axisLength = Math.max(
+    MIN_AXIS_LENGTH,
+    measuredWidth - marginStart - marginEnd,
+  );
+  const span =
+    renderedViewportRange.end - renderedViewportRange.start || 1;
 
   function timeToPos(t: number): number {
-    const fraction = (t - viewportRange.start) / span;
-    return MARGIN_START + fraction * axisLength;
+    const fraction = (t - renderedViewportRange.start) / span;
+    return marginStart + fraction * axisLength;
   }
 
-  // Ticks render below the axis in horizontal mode, and to the left in
-  // vertical mode — reserve clearance on whichever side that lands on so
-  // storyline bands don't render on top of the tick label text.
+  // Reserve room below the axis so storyline bands do not overlap tick labels.
   const { above, below } = useMemo(
     () =>
-      computeStorylineLayouts(storylines, {
+      computeStorylineLayouts(visibleStorylines, {
         timeToPos,
-        isHorizontal,
-        aboveReserved: isHorizontal ? 0 : TICK_LABEL_CLEARANCE,
-        belowReserved: isHorizontal ? TICK_LABEL_CLEARANCE : 0,
+        isHorizontal: true,
+        metrics,
+        aboveReserved: 0,
+        belowReserved: tickLabelClearance,
         // keep labels from rendering past the plot edge, where the storyline
         // title (left) or tick labels (right) live
         axisBounds: {
-          start: MARGIN_START + 4,
-          end: MARGIN_START + axisLength - 4,
+          start: marginStart + 4,
+          end: marginStart + axisLength - 4,
         },
         // skip nodes entirely outside the current zoom/pan instead of
         // rendering them (and their leader lines) far off-canvas
-        visibleRange: { start: viewportRange.start, end: viewportRange.end },
+        visibleRange: {
+          start: renderedViewportRange.start,
+          end: renderedViewportRange.end,
+        },
       }),
     // `timeToPos` is a fresh closure every render, but it's derived purely
     // from `axisLength` and `viewportRange` (already listed below) — depend
@@ -145,11 +301,13 @@ export function Timeline() {
     // recompute.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      storylines,
-      isHorizontal,
-      viewportRange.start,
-      viewportRange.end,
+      visibleStorylines,
+      renderedViewportRange.start,
+      renderedViewportRange.end,
       axisLength,
+      metrics,
+      marginStart,
+      tickLabelClearance,
     ],
   );
   const aboveExtent = totalExtent(above);
@@ -160,22 +318,85 @@ export function Timeline() {
     [above[0]?.storyline.id, below[0]?.storyline.id].filter(Boolean),
   );
 
-  const crossLength = aboveExtent + belowExtent + AXIS_CROSS_MARGIN * 2;
-  const canvasW = isHorizontal
-    ? MARGIN_START + axisLength + MARGIN_END
-    : crossLength;
-  const canvasH = isHorizontal
-    ? crossLength
-    : MARGIN_START + axisLength + MARGIN_END;
+  const crossLength = aboveExtent + belowExtent + axisCrossMargin * 2;
+  const canvasW = marginStart + axisLength + marginEnd;
+  const canvasH = crossLength;
+
+  useEffect(() => {
+    if (
+      measuredHeight <= 0 ||
+      appliedFocusVersion.current === canvasResetVersion
+    ) {
+      return;
+    }
+    setCrossOffset(Math.round((measuredHeight - canvasH) / 2));
+    appliedFocusVersion.current = canvasResetVersion;
+  }, [canvasH, canvasResetVersion, measuredHeight]);
+
+  useEffect(() => {
+    setCrossOffset((offset) =>
+      clampCanvasOffset(
+        offset,
+        measuredHeight,
+        canvasH,
+        crossPanPadding,
+      ),
+    );
+  }, [canvasH, crossPanPadding, measuredHeight]);
+
+  useEffect(() => {
+    if (
+      mode !== "edit" ||
+      focusRequest.version === 0 ||
+      appliedNodeFocusVersion.current === focusRequest.version ||
+      measuredHeight <= 0
+    ) {
+      return;
+    }
+
+    for (const layout of [...above, ...below]) {
+      const focusedNode = layout.lanedNodes.find(
+        (item) => item.node.id === focusRequest.nodeId,
+      );
+      if (!focusedNode) continue;
+      const laneSign = layout.storyline.position === "above" ? 1 : -1;
+      const nodeY =
+        aboveExtent +
+        axisCrossMargin -
+        laneSign * (layout.baseOffset + focusedNode.lane * metrics.laneHeight);
+      setCrossOffset(
+        clampCanvasOffset(
+          measuredHeight / 2 - nodeY,
+          measuredHeight,
+          canvasH,
+          crossPanPadding,
+        ),
+      );
+      appliedNodeFocusVersion.current = focusRequest.version;
+      break;
+    }
+  }, [
+    above,
+    aboveExtent,
+    axisCrossMargin,
+    below,
+    canvasH,
+    crossPanPadding,
+    focusRequest,
+    measuredHeight,
+    metrics.laneHeight,
+    mode,
+  ]);
 
   function point(pos: number, offset: number): { x: number; y: number } {
-    const axisCenter = aboveExtent + AXIS_CROSS_MARGIN;
-    return isHorizontal
-      ? { x: pos, y: axisCenter - offset }
-      : { x: axisCenter - offset, y: pos };
+    const axisCenter = aboveExtent + axisCrossMargin;
+    return { x: pos, y: axisCenter - offset };
   }
 
-  const ticks = generateTicks(viewportRange.start, viewportRange.end);
+  const ticks = generateTicks(
+    renderedViewportRange.start,
+    renderedViewportRange.end,
+  );
 
   function findNodeAndStoryline(
     id: string,
@@ -187,68 +408,182 @@ export function Timeline() {
     return null;
   }
 
-  function handleWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 1.12 : 1 / 1.12;
-    const rect = containerRef.current?.getBoundingClientRect();
-    let centerFraction = 0.5;
-    if (rect) {
-      const localPos = isHorizontal
-        ? e.clientX - rect.left
-        : e.clientY - rect.top;
-      const scale = isHorizontal ? rect.width / canvasW : rect.height / canvasH;
-      const svgPos = localPos / scale;
-      centerFraction = Math.min(
-        1,
-        Math.max(0, (svgPos - MARGIN_START) / axisLength),
-      );
+  function activateNode(storylineId: string, nodeId: string) {
+    setFocusedClusterNodeIds(null);
+    if (mode === "edit") {
+      setFocusedNodeId(null);
+      onSelectNode(storylineId, nodeId);
+    } else {
+      setFocusedNodeId(nodeId);
     }
-    // setViewportRange itself clamps the resulting span/position to the
-    // store's pan bounds, so no local min/max clamping is needed here.
-    const newSpan = span * factor;
-    const center = viewportRange.start + span * centerFraction;
-    setViewportRange({
-      start: center - newSpan * centerFraction,
-      end: center + newSpan * (1 - centerFraction),
-    });
   }
 
+  useEffect(() => {
+    if (mode !== "edit") return;
+    setFocusedNodeId(null);
+    setFocusedClusterNodeIds(null);
+  }, [mode, setFocusedNodeId]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    function handleWheel(event: WheelEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+      const deltaX = event.deltaX * unit;
+      const deltaY = event.deltaY * unit;
+
+      if (event.ctrlKey || event.metaKey) {
+        const normalizedDelta = deltaY || deltaX;
+        const factor = Math.exp(
+          Math.min(1, Math.max(-1, normalizedDelta * 0.002)),
+        );
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const svgPos = (event.clientX - rect.left) / (rect.width / canvasW);
+        const centerFraction = Math.min(
+          1,
+          Math.max(0, (svgPos - marginStart) / axisLength),
+        );
+        if (viewportAnimationFrame.current !== null) {
+          cancelAnimationFrame(viewportAnimationFrame.current);
+          viewportAnimationFrame.current = null;
+        }
+        const nextRange = clampViewportRange(
+          zoomViewportRange(
+            renderedViewportRangeRef.current,
+            factor,
+            centerFraction,
+          ),
+          panBounds,
+        );
+        renderedViewportRangeRef.current = nextRange;
+        setRenderedViewportRange(nextRange);
+        setViewportRange(nextRange);
+        return;
+      }
+
+      // Trackpad horizontal gestures (or Shift + a mouse wheel) move through
+      // time. A regular vertical wheel moves the canvas cross-axis instead of
+      // bubbling to the document and creating a root scrollbar.
+      const timeDelta = event.shiftKey ? deltaY || deltaX : deltaX;
+      const crossDelta = event.shiftKey ? 0 : deltaY;
+      if (timeDelta) {
+        if (viewportAnimationFrame.current !== null) {
+          cancelAnimationFrame(viewportAnimationFrame.current);
+          viewportAnimationFrame.current = null;
+        }
+        const nextRange = clampViewportRange(
+          panViewportRange(
+            renderedViewportRangeRef.current,
+            timeDelta / axisLength,
+          ),
+          panBounds,
+        );
+        renderedViewportRangeRef.current = nextRange;
+        setRenderedViewportRange(nextRange);
+        setViewportRange(nextRange);
+      }
+      if (crossDelta) {
+        setCrossOffset((offset) =>
+          clampCanvasOffset(
+            offset - crossDelta,
+            measuredHeight,
+            canvasH,
+            crossPanPadding,
+          ),
+        );
+      }
+    }
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [
+    axisLength,
+    canvasH,
+    canvasW,
+    crossPanPadding,
+    marginStart,
+    measuredHeight,
+    panBounds,
+    setViewportRange,
+  ]);
+
   function handlePointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
     if ((e.target as Element).closest("[data-timeline-action]")) return;
-    (e.target as Element).setPointerCapture(e.pointerId);
+    if (viewportAnimationFrame.current !== null) {
+      cancelAnimationFrame(viewportAnimationFrame.current);
+      viewportAnimationFrame.current = null;
+      setViewportRange(renderedViewportRangeRef.current);
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
     dragState.current = {
       startX: e.clientX,
       startY: e.clientY,
-      range: viewportRange,
+      range: renderedViewportRangeRef.current,
+      crossOffset,
     };
     setIsDragging(true);
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     if (!dragState.current) return;
-    const rect = containerRef.current?.getBoundingClientRect();
+    const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const scale = isHorizontal ? rect.width / canvasW : rect.height / canvasH;
-    const deltaScreen = isHorizontal
-      ? e.clientX - dragState.current.startX
-      : e.clientY - dragState.current.startY;
-    const deltaSvg = deltaScreen / scale;
+    const scale = rect.width / canvasW;
+    const deltaSvg = (e.clientX - dragState.current.startX) / scale;
     const deltaTime =
       -(deltaSvg / axisLength) *
       (dragState.current.range.end - dragState.current.range.start);
-    pendingDragRange.current = {
-      start: dragState.current.range.start + deltaTime,
-      end: dragState.current.range.end + deltaTime,
-    };
+    pendingDragRange.current = clampViewportRange(
+      {
+        start: dragState.current.range.start + deltaTime,
+        end: dragState.current.range.end + deltaTime,
+      },
+      panBounds,
+    );
+    pendingCrossOffset.current = clampCanvasOffset(
+      dragState.current.crossOffset + (e.clientY - dragState.current.startY),
+      measuredHeight,
+      canvasH,
+      crossPanPadding,
+    );
     if (dragFrame.current === null) {
       dragFrame.current = requestAnimationFrame(() => {
-        if (pendingDragRange.current) setViewportRange(pendingDragRange.current);
+        if (pendingDragRange.current) {
+          setViewportRange(pendingDragRange.current);
+          pendingDragRange.current = null;
+        }
+        if (pendingCrossOffset.current !== null) {
+          setCrossOffset(pendingCrossOffset.current);
+          pendingCrossOffset.current = null;
+        }
         dragFrame.current = null;
       });
     }
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(e: React.PointerEvent) {
+    const pointerStart = dragState.current;
+    if (pointerStart) {
+      const moved = Math.hypot(
+        e.clientX - pointerStart.startX,
+        e.clientY - pointerStart.startY,
+      );
+      if (moved <= 4) {
+        setFocusedNodeId(null);
+        setFocusedClusterNodeIds(null);
+      }
+    }
+    dragState.current = null;
+    setIsDragging(false);
+  }
+
+  function handlePointerCancel() {
     dragState.current = null;
     setIsDragging(false);
   }
@@ -256,53 +591,51 @@ export function Timeline() {
   const focused = focusedNodeId ? findNodeAndStoryline(focusedNodeId) : null;
 
   return (
-    <div className="relative w-full overflow-x-auto">
+    <div className="relative h-full min-h-0 w-full overflow-hidden">
+      <div className="pointer-events-none absolute right-2 top-2 z-10 rounded bg-white/35 px-2 py-1 text-[10px] text-neutral-500/65 backdrop-blur-[2px]">
+        拖曳／滾輪平移 · Ctrl/⌘＋滾輪縮放
+      </div>
+
       <div
         ref={containerRef}
-        className="w-full touch-none select-none"
-        onWheel={handleWheel}
+        className="timeline-canvas relative h-full w-full select-none overflow-hidden"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        style={{ cursor: isDragging ? "grabbing" : "grab" }}
+        onPointerCancel={handlePointerCancel}
+        style={{
+          cursor: isDragging ? "grabbing" : "grab",
+          touchAction: "none",
+          backgroundPosition: `${((timeToPos(0) % 24) + 24) % 24}px ${((crossOffset % 24) + 24) % 24}px, 0 0, 0 0, center, center`,
+        }}
       >
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${canvasW} ${canvasH}`}
-          width="100%"
-          height={
-            isHorizontal ? Math.min(canvasH, 560) : Math.min(canvasH, 720)
-          }
+          width={canvasW}
+          height={canvasH}
+          className="absolute left-0 max-w-none"
           role="img"
           aria-label="歷史時間軸，顯示各故事線的節點分佈"
-          style={{ minWidth: isHorizontal ? canvasW : undefined }}
+          style={{ top: crossOffset }}
         >
+          <rect width={canvasW} height={canvasH} fill="transparent" />
+
           {/* main axis */}
-          {isHorizontal ? (
-            <line
-              x1={MARGIN_START}
-              y1={aboveExtent + AXIS_CROSS_MARGIN}
-              x2={MARGIN_START + axisLength}
-              y2={aboveExtent + AXIS_CROSS_MARGIN}
-              stroke="var(--border-stronger, #999)"
-              strokeWidth={1.5}
-            />
-          ) : (
-            <line
-              x1={aboveExtent + AXIS_CROSS_MARGIN}
-              y1={MARGIN_START}
-              x2={aboveExtent + AXIS_CROSS_MARGIN}
-              y2={MARGIN_START + axisLength}
-              stroke="var(--border-stronger, #999)"
-              strokeWidth={1.5}
-            />
-          )}
+          <line
+            x1={marginStart}
+            y1={aboveExtent + axisCrossMargin}
+            x2={marginStart + axisLength}
+            y2={aboveExtent + axisCrossMargin}
+            stroke="var(--border-stronger, #999)"
+            strokeWidth={1.5}
+          />
 
           {/* ticks */}
           {ticks.map((t) => {
             const pos = timeToPos(t);
-            const axisCenter = aboveExtent + AXIS_CROSS_MARGIN;
-            return isHorizontal ? (
+            const axisCenter = aboveExtent + axisCrossMargin;
+            return (
               <g key={t}>
                 <line
                   x1={pos}
@@ -316,30 +649,10 @@ export function Timeline() {
                   x={pos}
                   y={axisCenter + 18}
                   textAnchor="middle"
-                  fontSize={11}
-                  fill="#888"
+                  fontSize={metrics.tickFontSize}
+                  fill="#666"
                 >
-                  {formatYearLabel(t)}
-                </text>
-              </g>
-            ) : (
-              <g key={t}>
-                <line
-                  x1={axisCenter - 4}
-                  y1={pos}
-                  x2={axisCenter + 4}
-                  y2={pos}
-                  stroke="#999"
-                  strokeWidth={1}
-                />
-                <text
-                  x={axisCenter - 10}
-                  y={pos + 4}
-                  textAnchor="end"
-                  fontSize={11}
-                  fill="#888"
-                >
-                  {formatYearLabel(t)}
+                  {formatTimelineTick(t, span)}
                 </text>
               </g>
             );
@@ -350,57 +663,72 @@ export function Timeline() {
             const isAbove = layout.storyline.position === "above";
             const laneSign = isAbove ? 1 : -1;
             const trackOffset = layout.baseOffset;
+            const trackY = point(0, laneSign * trackOffset).y;
+            const visibilityIconX = marginStart - 12;
+            const visibilityIconY = trackY - 4;
+            const displayName = truncateTextToWidth(
+              layout.storyline.name,
+              storylineLabelMaxWidth,
+              metrics.storylineFontSize,
+            );
 
             return (
               <g key={layout.storyline.id}>
-                {/* track label */}
-                {isHorizontal ? (
+                {/* track label and quick-hide control */}
+                <g
+                  data-timeline-action
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`隱藏故事線「${layout.storyline.name}」`}
+                  style={{ cursor: "pointer" }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleStorylineVisibility(layout.storyline.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      toggleStorylineVisibility(layout.storyline.id);
+                    }
+                  }}
+                >
+                  <title>{layout.storyline.name}－點擊隱藏</title>
                   <text
-                    x={MARGIN_START - 14}
-                    y={point(0, laneSign * trackOffset).y}
+                    x={marginStart - 26}
+                    y={trackY}
                     textAnchor="end"
-                    fontSize={12}
+                    fontSize={metrics.storylineFontSize}
                     fontWeight={500}
                     fill={layout.storyline.color}
                   >
-                    {layout.storyline.name}
+                    {displayName}
                   </text>
-                ) : (
-                  <text
-                    x={point(0, laneSign * trackOffset).x}
-                    y={MARGIN_START - 12}
-                    textAnchor="middle"
-                    fontSize={12}
-                    fontWeight={500}
+                  <path
+                    d={`M ${visibilityIconX - 7} ${visibilityIconY} Q ${visibilityIconX} ${visibilityIconY - 6} ${visibilityIconX + 7} ${visibilityIconY} Q ${visibilityIconX} ${visibilityIconY + 6} ${visibilityIconX - 7} ${visibilityIconY} Z`}
+                    fill="white"
+                    stroke={layout.storyline.color}
+                    strokeWidth={1.25}
+                  />
+                  <circle
+                    cx={visibilityIconX}
+                    cy={visibilityIconY}
+                    r={2.25}
                     fill={layout.storyline.color}
-                  >
-                    {layout.storyline.name}
-                  </text>
-                )}
+                  />
+                </g>
 
                 {/* track base line — the innermost track sits right next to the main axis, so its own line would be redundant */}
-                {!innermostStorylineIds.has(layout.storyline.id) &&
-                  (isHorizontal ? (
-                    <line
-                      x1={MARGIN_START}
-                      y1={point(0, laneSign * trackOffset).y}
-                      x2={MARGIN_START + axisLength}
-                      y2={point(0, laneSign * trackOffset).y}
-                      stroke={layout.storyline.color}
-                      strokeWidth={1}
-                      opacity={0.4}
-                    />
-                  ) : (
-                    <line
-                      x1={point(0, laneSign * trackOffset).x}
-                      y1={MARGIN_START}
-                      x2={point(0, laneSign * trackOffset).x}
-                      y2={MARGIN_START + axisLength}
-                      stroke={layout.storyline.color}
-                      strokeWidth={1}
-                      opacity={0.4}
-                    />
-                  ))}
+                {!innermostStorylineIds.has(layout.storyline.id) && (
+                  <line
+                    x1={marginStart}
+                    y1={trackY}
+                    x2={marginStart + axisLength}
+                    y2={trackY}
+                    stroke={layout.storyline.color}
+                    strokeWidth={1}
+                    opacity={0.4}
+                  />
+                )}
 
                 {/* nodes — markers that visually collide are merged into a cluster badge below, so skip them here */}
                 {layout.lanedNodes
@@ -423,7 +751,9 @@ export function Timeline() {
                       );
                       const opacity = matches ? 1 : 0.15;
                       const isHovered = hoveredNode === node.id;
-                      const laneOffset = trackOffset + lane * LANE_HEIGHT;
+                      const isSelected =
+                        mode === "edit" && selectedNodeId === node.id;
+                      const laneOffset = trackOffset + lane * metrics.laneHeight;
                       // renderStartPos/renderEndPos are already clamped to the visible plot
                       // area, so a range that runs off-screen is drawn clipped at the edge
                       // instead of stretching (and dragging its leader line) off-canvas.
@@ -439,7 +769,7 @@ export function Timeline() {
                         laneSign * (laneOffset + labelOffset),
                       );
                       const needsLeader =
-                        labelOffset > LABEL_BASE_OFFSET || labelShift !== 0;
+                        labelOffset > metrics.labelBaseOffset || labelShift !== 0;
 
                       // A range end only counts as "real" if it wasn't clamped to the
                       // visible edge — clipped ends get a flat cap, a fading fill, and
@@ -457,7 +787,8 @@ export function Timeline() {
                           data-timeline-action
                           role="button"
                           tabIndex={matches ? 0 : -1}
-                          aria-label={`查看${node.title}詳情`}
+                          aria-label={`${mode === "edit" ? "編輯" : "查看"}${node.title}${mode === "edit" ? "" : "詳情"}`}
+                          aria-current={isSelected ? "true" : undefined}
                           opacity={opacity}
                           style={{
                             cursor: matches ? "pointer" : "default",
@@ -465,14 +796,12 @@ export function Timeline() {
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setFocusedNodeId(node.id);
-                            setFocusedClusterNodeIds(null);
+                            activateNode(layout.storyline.id, node.id);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              setFocusedNodeId(node.id);
-                              setFocusedClusterNodeIds(null);
+                              activateNode(layout.storyline.id, node.id);
                             }
                           }}
                           onMouseEnter={() => setHoveredNode(node.id)}
@@ -521,81 +850,74 @@ export function Timeline() {
                           )}
 
                           {isRange ? (
-                            isHorizontal ? (
-                              <>
-                                {(startClipped || endClipped) && (
-                                  <defs>
-                                    <linearGradient
-                                      id={gradientId}
-                                      x1="0"
-                                      y1="0"
-                                      x2="1"
-                                      y2="0"
-                                    >
-                                      <stop
-                                        offset="0%"
-                                        stopColor={layout.storyline.color}
-                                        stopOpacity={startClipped ? 0.25 : 1}
-                                      />
-                                      <stop
-                                        offset={startClipped ? "15%" : "0%"}
-                                        stopColor={layout.storyline.color}
-                                        stopOpacity={1}
-                                      />
-                                      <stop
-                                        offset={endClipped ? "85%" : "100%"}
-                                        stopColor={layout.storyline.color}
-                                        stopOpacity={1}
-                                      />
-                                      <stop
-                                        offset="100%"
-                                        stopColor={layout.storyline.color}
-                                        stopOpacity={endClipped ? 0.25 : 1}
-                                      />
-                                    </linearGradient>
-                                  </defs>
+                            <>
+                              {(startClipped || endClipped) && (
+                                <defs>
+                                  <linearGradient
+                                    id={gradientId}
+                                    x1="0"
+                                    y1="0"
+                                    x2="1"
+                                    y2="0"
+                                  >
+                                    <stop
+                                      offset="0%"
+                                      stopColor={layout.storyline.color}
+                                      stopOpacity={startClipped ? 0.25 : 1}
+                                    />
+                                    <stop
+                                      offset={startClipped ? "15%" : "0%"}
+                                      stopColor={layout.storyline.color}
+                                      stopOpacity={1}
+                                    />
+                                    <stop
+                                      offset={endClipped ? "85%" : "100%"}
+                                      stopColor={layout.storyline.color}
+                                      stopOpacity={1}
+                                    />
+                                    <stop
+                                      offset="100%"
+                                      stopColor={layout.storyline.color}
+                                      stopOpacity={endClipped ? 0.25 : 1}
+                                    />
+                                  </linearGradient>
+                                </defs>
+                              )}
+                              <path
+                                d={capsuleBarPath(
+                                  Math.min(p1.x, p2.x),
+                                  Math.max(
+                                    Math.min(p1.x, p2.x) + 8,
+                                    Math.max(p1.x, p2.x),
+                                  ),
+                                  p1.y,
+                                  8,
+                                  !startClipped,
+                                  !endClipped,
                                 )}
-                                <path
-                                  d={capsuleBarPath(
-                                    Math.min(p1.x, p2.x),
-                                    Math.max(
-                                      Math.min(p1.x, p2.x) + 8,
-                                      Math.max(p1.x, p2.x),
-                                    ),
-                                    p1.y,
-                                    8,
-                                    !startClipped,
-                                    !endClipped,
-                                  )}
-                                  fill={
-                                    startClipped || endClipped
-                                      ? `url(#${gradientId})`
-                                      : layout.storyline.color
-                                  }
-                                  stroke={isHovered ? "#000" : "#0006"}
-                                  strokeWidth={isHovered ? 1.5 : 0.5}
-                                />
-                              </>
-                            ) : (
-                              <rect
-                                x={p1.x - 4}
-                                y={Math.min(p1.y, p2.y)}
-                                width={8}
-                                height={Math.max(Math.abs(p2.y - p1.y), 8)}
-                                rx={4}
-                                fill={layout.storyline.color}
-                                stroke={isHovered ? "#000" : "#0006"}
-                                strokeWidth={isHovered ? 1.5 : 0.5}
+                                fill={
+                                  startClipped || endClipped
+                                    ? `url(#${gradientId})`
+                                    : layout.storyline.color
+                                }
+                                stroke={
+                                  isSelected
+                                    ? "#2563eb"
+                                    : isHovered
+                                      ? "#000"
+                                      : "#0006"
+                                }
+                                strokeWidth={isSelected ? 2.5 : isHovered ? 1.5 : 0.5}
                               />
-                            )
+                            </>
                           ) : (
                             <circle
                               cx={centerPoint.x}
                               cy={centerPoint.y}
                               r={isHovered ? 4.5 : 3.5}
-                              fill="none"
-                              stroke={layout.storyline.color}
-                              strokeWidth={isHovered ? 2.5 : 1.75}
+                              fill={isSelected ? "#dbeafe" : "none"}
+                              stroke={isSelected ? "#2563eb" : layout.storyline.color}
+                              strokeWidth={isSelected ? 3 : isHovered ? 2.5 : 1.75}
                             />
                           )}
 
@@ -615,9 +937,9 @@ export function Timeline() {
                             x={labelPoint.x}
                             y={labelPoint.y}
                             textAnchor="middle"
-                            fontSize={10}
-                            fontWeight={isHovered ? 700 : 400}
-                            fill={isHovered ? "#000" : "#333"}
+                            fontSize={metrics.labelFontSize}
+                            fontWeight={isSelected || isHovered ? 700 : 400}
+                            fill={isSelected ? "#1d4ed8" : isHovered ? "#000" : "#333"}
                           >
                             {node.title}
                           </text>
@@ -629,11 +951,11 @@ export function Timeline() {
                 {/* marker clusters — nodes whose markers genuinely overlap on screen */}
                 {layout.clusters.map((cluster) => {
                   const axisPos = Math.min(
-                    Math.max(timeToPos(cluster.center), MARGIN_START),
-                    MARGIN_START + axisLength,
+                    Math.max(timeToPos(cluster.center), marginStart),
+                    marginStart + axisLength,
                   );
                   const clusterLaneOffset =
-                    trackOffset + cluster.lane * LANE_HEIGHT;
+                    trackOffset + cluster.lane * metrics.laneHeight;
                   const badgePoint = point(
                     axisPos,
                     laneSign * clusterLaneOffset,
@@ -653,14 +975,16 @@ export function Timeline() {
                       );
                     if (memberNodes.length === 0) return null;
                     const firstNode = memberNodes[0];
+                    const clusterHasSelection =
+                      mode === "edit" && cluster.nodeIds.includes(selectedNodeId ?? "");
                     const axisPoint = point(axisPos, 0);
                     const labelPoint = point(
                       axisPos,
-                      laneSign * (clusterLaneOffset + LABEL_BASE_OFFSET),
+                      laneSign * (clusterLaneOffset + metrics.labelBaseOffset),
                     );
                     const titleWidth = measureTextWidth(
                       firstNode.node.title,
-                      10,
+                      metrics.labelFontSize,
                     );
                     return (
                       <g
@@ -668,18 +992,27 @@ export function Timeline() {
                         data-timeline-action
                         role="button"
                         tabIndex={0}
-                        aria-label={`查看同一時間的 ${cluster.nodeIds.length} 個節點`}
+                        aria-label={`${mode === "edit" ? "編輯" : "查看"}同一時間的 ${cluster.nodeIds.length} 個節點`}
+                        aria-current={clusterHasSelection ? "true" : undefined}
                         style={{ cursor: "pointer" }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setFocusedNodeId(null);
-                          setFocusedClusterNodeIds(cluster.nodeIds);
+                          if (mode === "edit") {
+                            activateNode(layout.storyline.id, firstNode.node.id);
+                          } else {
+                            setFocusedNodeId(null);
+                            setFocusedClusterNodeIds(cluster.nodeIds);
+                          }
                         }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setFocusedNodeId(null);
-                            setFocusedClusterNodeIds(cluster.nodeIds);
+                            if (mode === "edit") {
+                              activateNode(layout.storyline.id, firstNode.node.id);
+                            } else {
+                              setFocusedNodeId(null);
+                              setFocusedClusterNodeIds(cluster.nodeIds);
+                            }
                           }
                         }}
                       >
@@ -699,17 +1032,18 @@ export function Timeline() {
                           cx={badgePoint.x}
                           cy={badgePoint.y}
                           r={3.5}
-                          fill="none"
-                          stroke={layout.storyline.color}
-                          strokeWidth={1.75}
+                          fill={clusterHasSelection ? "#dbeafe" : "none"}
+                          stroke={clusterHasSelection ? "#2563eb" : layout.storyline.color}
+                          strokeWidth={clusterHasSelection ? 3 : 1.75}
                         />
                         {/* first node's label */}
                         <text
                           x={labelPoint.x}
                           y={labelPoint.y}
                           textAnchor="middle"
-                          fontSize={10}
-                          fill="#333"
+                          fontSize={metrics.labelFontSize}
+                          fill={clusterHasSelection ? "#1d4ed8" : "#333"}
+                          fontWeight={clusterHasSelection ? 700 : 400}
                         >
                           {firstNode.node.title}
                         </text>
@@ -717,7 +1051,7 @@ export function Timeline() {
                         <text
                           x={labelPoint.x + titleWidth / 2 + 2}
                           y={labelPoint.y - 5}
-                          fontSize={7}
+                          fontSize={metrics.superscriptFontSize}
                           fontWeight={700}
                           fill={layout.storyline.color}
                         >
@@ -739,7 +1073,7 @@ export function Timeline() {
                       style={{ cursor: "pointer" }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setViewportRange({
+                        animateViewportRange({
                           start: cluster.start - pad,
                           end: cluster.end + pad,
                         });
@@ -747,7 +1081,7 @@ export function Timeline() {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setViewportRange({
+                          animateViewportRange({
                             start: cluster.start - pad,
                             end: cluster.end + pad,
                           });
@@ -766,7 +1100,7 @@ export function Timeline() {
                         x={badgePoint.x}
                         y={badgePoint.y + 3}
                         textAnchor="middle"
-                        fontSize={9}
+                        fontSize={metrics.clusterFontSize}
                         fontWeight={600}
                         fill={layout.storyline.color}
                       >
@@ -789,24 +1123,27 @@ export function Timeline() {
                 );
                 if (!found) continue;
                 const laneSign = layout.storyline.position === "above" ? 1 : -1;
-                const laneOffset = layout.baseOffset + found.lane * LANE_HEIGHT;
+                const laneOffset = layout.baseOffset + found.lane * metrics.laneHeight;
                 const axisPos = (found.renderStartPos + found.renderEndPos) / 2;
                 const tooltipPoint = point(
                   axisPos + found.labelShift,
                   laneSign *
-                    (laneOffset + found.labelOffset + HOVER_TOOLTIP_GAP),
+                    (laneOffset + found.labelOffset + metrics.hoverTooltipGap),
                 );
                 const tooltipText = found.node.timeRange
-                  ? `${formatYearLabel(found.start)} – ${formatYearLabel(found.end)}`
-                  : formatYearLabel(found.start);
-                const textWidth = measureTextWidth(tooltipText, 9);
+                  ? `${formatHistoricalDate(found.node.timeRange.start)} – ${formatHistoricalDate(found.node.timeRange.end)}`
+                  : found.node.time
+                    ? formatHistoricalDate(found.node.time)
+                    : formatTimelineTick(found.start, span);
+                const textWidth = measureTextWidth(tooltipText, metrics.tooltipFontSize);
+                const tooltipHeight = metrics.tooltipFontSize + 7;
                 return (
                   <g key="hover-tooltip" style={{ pointerEvents: "none" }}>
                     <rect
                       x={tooltipPoint.x - textWidth / 2 - 4}
-                      y={tooltipPoint.y - 10}
+                      y={tooltipPoint.y - metrics.tooltipFontSize}
                       width={textWidth + 8}
-                      height={14}
+                      height={tooltipHeight}
                       rx={3}
                       fill="#fff"
                       stroke="#0002"
@@ -816,7 +1153,7 @@ export function Timeline() {
                       x={tooltipPoint.x}
                       y={tooltipPoint.y}
                       textAnchor="middle"
-                      fontSize={9}
+                      fontSize={metrics.tooltipFontSize}
                       fill="#333"
                     >
                       {tooltipText}
@@ -829,26 +1166,27 @@ export function Timeline() {
         </svg>
       </div>
 
-      {focusedClusterNodeIds ? (
-        <div className="mt-3 flex justify-end flex-wrap gap-2">
-          {focusedClusterNodeIds.map((id) => {
-            const found = findNodeAndStoryline(id);
-            if (!found) return null;
-            return (
-              <NodeDetailCard
-                key={id}
-                node={found.node}
-                storyline={found.storyline}
-                onClose={() => setFocusedClusterNodeIds(null)}
-              />
-            );
-          })}
-        </div>
-      ) : focused ? (
-        <div className="mt-3 flex justify-end">
-          <NodeDetailCard node={focused.node} storyline={focused.storyline} />
-        </div>
-      ) : null}
+      {mode === "view" &&
+        (focusedClusterNodeIds ? (
+          <div className="fixed bottom-3 right-3 z-40 flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-black/10 bg-white/95 p-2 shadow-2xl backdrop-blur-sm">
+            {focusedClusterNodeIds.map((id) => {
+              const found = findNodeAndStoryline(id);
+              if (!found) return null;
+              return (
+                <NodeDetailCard
+                  key={id}
+                  node={found.node}
+                  storyline={found.storyline}
+                  onClose={() => setFocusedClusterNodeIds(null)}
+                />
+              );
+            })}
+          </div>
+        ) : focused ? (
+          <div className="fixed bottom-3 right-3 z-40 max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto overscroll-contain rounded-2xl border border-black/10 bg-white/95 p-2 shadow-2xl backdrop-blur-sm">
+            <NodeDetailCard node={focused.node} storyline={focused.storyline} />
+          </div>
+        ) : null)}
     </div>
   );
 }

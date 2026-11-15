@@ -35,8 +35,9 @@ export interface TimelineData {
   storylines: Storyline[]
 }
 
-export type Orientation = 'horizontal' | 'vertical'
 export type TagMode = 'or' | 'and'
+export type WorkspaceMode = 'view' | 'edit'
+export type DisplayDensity = 'comfortable' | 'compact'
 
 export interface ViewportRange {
   start: number

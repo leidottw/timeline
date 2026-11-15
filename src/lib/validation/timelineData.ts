@@ -50,9 +50,8 @@ function validateNode(value: unknown, path: string, ids: Set<string>): asserts v
 
   if (node.description !== undefined) assert(typeof node.description === 'string', `${path}.description 必須是文字`)
   assertOptionalStringArray(node.tags, `${path}.tags`)
-
   // Backward compatibility: older exports stored a single nodeType value.
-  // Fold it into tags so importing or hydrating old data does not lose meaning.
+  // Fold it into tags so existing user data keeps its classification.
   if (node.nodeType !== undefined) {
     assert(typeof node.nodeType === 'string', `${path}.nodeType 必須是文字`)
     const legacyType = node.nodeType.trim()

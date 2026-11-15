@@ -118,7 +118,11 @@ const measureCache = new Map<string, number>()
 let measureCtx: CanvasRenderingContext2D | null | undefined
 
 /** Measure rendered text width in pixels, matching SVG <text> layout closely enough for collision checks. */
-export function measureTextWidth(text: string, fontSize: number, fontFamily = 'sans-serif'): number {
+export function measureTextWidth(
+  text: string,
+  fontSize: number,
+  fontFamily = 'system-ui, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif'
+): number {
   const key = `${fontSize}|${fontFamily}|${text}`
   const cached = measureCache.get(key)
   if (cached !== undefined) return cached

@@ -77,6 +77,21 @@ export function formatYearLabel(year: number): string {
   return `西元 ${rounded} 年`
 }
 
+/** Add month/day detail as the viewport zooms below a few years. */
+export function formatTimelineTick(value: number, viewportSpan: number): string {
+  const year = Math.floor(value)
+  const yearLabel = formatYearLabel(year)
+  if (viewportSpan >= 2) return yearLabel
+
+  const withinYear = Math.max(0, Math.min(0.999999, value - year))
+  const month = Math.floor(withinYear * 12) + 1
+  if (viewportSpan >= 0.2) return `${yearLabel} ${month} 月`
+
+  const withinMonth = withinYear * 12 - (month - 1)
+  const day = Math.floor(withinMonth * 30) + 1
+  return `${yearLabel} ${month} 月 ${Math.min(day, 30)} 日`
+}
+
 export function formatHistoricalDate(input: string): string {
   const parsed = parseHistoricalDate(input)
   const yearLabel = formatYearLabel(parsed.year)

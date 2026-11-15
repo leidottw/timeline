@@ -1,12 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Orientation, Storyline, TagMode, TimelineData, TimelineNode, ViewportRange } from '../types'
+import type { DisplayDensity, Storyline, TagMode, TimelineData, TimelineNode, ViewportRange } from '../types'
 import { getNodeSpan } from '../lib/date/historicalDate'
 import { parseTimelineData } from '../lib/validation/timelineData'
+import { DEFAULT_DISPLAY_DENSITY, parseDisplayDensity } from '../lib/settings/displayDensity'
+import { clampViewportRange, focusViewportRange, zoomViewportRange } from '../lib/viewport/range'
 import initialData from '../data/timeline-data.json'
-
-/** smallest allowed viewport span (max zoom-in) */
-const MIN_VIEWPORT_SPAN = 0.5
 
 function computeDataExtent(storylines: Storyline[]): { min: number; max: number } | null {
   let min = Infinity
@@ -33,23 +32,17 @@ function computeFullRange(storylines: Storyline[]): ViewportRange {
   return { start: extent.min - pad, end: extent.max + pad }
 }
 
-/** hard zoom/pan limit: data span + 10% total, so users can't scroll or zoom out into empty space */
+/** Navigable range: content plus enough blank space to give either edge breathing room. */
 function computePanBounds(storylines: Storyline[]): ViewportRange {
   const extent = computeDataExtent(storylines)
   if (!extent) return { start: 0, end: 100 }
-  const span = extent.max - extent.min
-  const pad = Math.max(span * 0.05, 1)
+  const pad = Math.max((extent.max - extent.min) * 0.18, 4)
   return { start: extent.min - pad, end: extent.max + pad }
 }
 
-/** Clamp a candidate viewport to stay within `bounds`, keeping its span between MIN_VIEWPORT_SPAN and the full bounds width. */
-function clampViewportRange(range: ViewportRange, bounds: ViewportRange): ViewportRange {
-  const boundsWidth = Math.max(bounds.end - bounds.start, MIN_VIEWPORT_SPAN)
-  const span = Math.min(Math.max(range.end - range.start, MIN_VIEWPORT_SPAN), boundsWidth)
-  let start = range.start
-  if (start < bounds.start) start = bounds.start
-  if (start + span > bounds.end) start = bounds.end - span
-  return { start, end: start + span }
+function getVisibleStorylines(storylines: Storyline[], hiddenIds: string[]): Storyline[] {
+  const visible = storylines.filter((storyline) => !hiddenIds.includes(storyline.id))
+  return visible.length > 0 ? visible : storylines
 }
 
 function collectAllTags(storylines: Storyline[]): string[] {
@@ -65,22 +58,27 @@ function collectAllTags(storylines: Storyline[]): string[] {
 interface TimelineState {
   storylines: Storyline[]
   fullRange: ViewportRange
-  /** hard limit on how far the viewport can zoom out or pan to — data span + 10% */
-  panBounds: ViewportRange
   viewportRange: ViewportRange
-  orientation: Orientation
+  panBounds: ViewportRange
+  displayDensity: DisplayDensity
+  hiddenStorylineIds: string[]
   activeTags: string[]
   tagMode: TagMode
   focusedNodeId: string | null
   allTags: string[]
   past: Storyline[][]
   future: Storyline[][]
+  canvasResetVersion: number
+  viewportAnimationVersion: number
 
   setViewportRange: (range: ViewportRange) => void
+  animateViewportRange: (range: ViewportRange) => void
   resetViewport: () => void
-  zoom: (factor: number, centerFraction?: number) => void
-  pan: (deltaFraction: number) => void
-  setOrientation: (o: Orientation) => void
+  focusAllContent: () => void
+  focusNodeOnCanvas: (storylineId: string, nodeId: string) => void
+  animateZoom: (factor: number, centerFraction?: number) => void
+  setDisplayDensity: (density: DisplayDensity) => void
+  toggleStorylineVisibility: (id: string) => void
   toggleTag: (tag: string) => void
   clearTags: () => void
   setTagMode: (m: TagMode) => void
@@ -99,28 +97,27 @@ interface TimelineState {
     tags?: string[]
     tagMode?: TagMode
     range?: ViewportRange
-    orientation?: Orientation
     focus?: string
   }) => void
 }
 
 const initialStorylines = initialData.storylines as Storyline[]
 const initialFullRange = computeFullRange(initialStorylines)
-const initialPanBounds = computePanBounds(initialStorylines)
 
-/** Recompute the data-derived ranges after any edit to storylines/nodes, re-clamping the current viewport in case it no longer fits. */
+/** Recompute data-derived metadata after edits while preserving the user's current canvas position. */
 function withRecomputedRanges(
   storylines: Storyline[],
   viewportRange: ViewportRange,
-  activeTags?: string[]
+  activeTags?: string[],
+  hiddenStorylineIds: string[] = []
 ) {
-  const panBounds = computePanBounds(storylines)
   const allTags = collectAllTags(storylines)
+  const panBounds = computePanBounds(getVisibleStorylines(storylines, hiddenStorylineIds))
   return {
     storylines,
     fullRange: computeFullRange(storylines),
-    panBounds,
     viewportRange: clampViewportRange(viewportRange, panBounds),
+    panBounds,
     allTags,
     ...(activeTags ? { activeTags: activeTags.filter((tag) => allTags.includes(tag)) } : {}),
   }
@@ -130,7 +127,12 @@ const HISTORY_LIMIT = 50
 
 function commitStorylines(state: TimelineState, storylines: Storyline[]) {
   return {
-    ...withRecomputedRanges(storylines, state.viewportRange, state.activeTags),
+    ...withRecomputedRanges(
+      storylines,
+      state.viewportRange,
+      state.activeTags,
+      state.hiddenStorylineIds
+    ),
     past: [...state.past, state.storylines].slice(-HISTORY_LIMIT),
     future: [],
   }
@@ -139,41 +141,100 @@ function commitStorylines(state: TimelineState, storylines: Storyline[]) {
 export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
   storylines: initialStorylines,
   fullRange: initialFullRange,
-  panBounds: initialPanBounds,
   viewportRange: initialFullRange,
-  orientation: 'horizontal',
+  panBounds: computePanBounds(initialStorylines),
+  displayDensity: DEFAULT_DISPLAY_DENSITY,
+  hiddenStorylineIds: [],
   activeTags: [],
   tagMode: 'or',
   focusedNodeId: null,
   allTags: collectAllTags(initialStorylines),
   past: [],
   future: [],
+  canvasResetVersion: 0,
+  viewportAnimationVersion: 0,
 
-  setViewportRange: (range) => set((state) => ({ viewportRange: clampViewportRange(range, state.panBounds) })),
+  setViewportRange: (range) =>
+    set((state) => ({ viewportRange: clampViewportRange(range, state.panBounds) })),
 
-  resetViewport: () => set({ viewportRange: get().fullRange }),
+  animateViewportRange: (range) =>
+    set((state) => ({
+      viewportRange: clampViewportRange(range, state.panBounds),
+      viewportAnimationVersion: state.viewportAnimationVersion + 1,
+    })),
 
-  zoom: (factor, centerFraction = 0.5) => {
-    const { viewportRange, panBounds } = get()
-    const span = viewportRange.end - viewportRange.start
-    const center = viewportRange.start + span * centerFraction
-    const newSpan = span * factor
-    const range = {
-      start: center - newSpan * centerFraction,
-      end: center + newSpan * (1 - centerFraction),
-    }
-    set({ viewportRange: clampViewportRange(range, panBounds) })
+  resetViewport: () =>
+    set((state) => ({
+      viewportRange: clampViewportRange(get().fullRange, state.panBounds),
+      canvasResetVersion: state.canvasResetVersion + 1,
+      viewportAnimationVersion: state.viewportAnimationVersion + 1,
+    })),
+
+  focusAllContent: () =>
+    set((state) => {
+      const visibleStorylines = getVisibleStorylines(
+        state.storylines,
+        state.hiddenStorylineIds
+      )
+      return {
+        viewportRange: clampViewportRange(computeFullRange(visibleStorylines), state.panBounds),
+        canvasResetVersion: state.canvasResetVersion + 1,
+        viewportAnimationVersion: state.viewportAnimationVersion + 1,
+      }
+    }),
+
+  focusNodeOnCanvas: (storylineId, nodeId) =>
+    set((state) => {
+      const storyline = state.storylines.find((item) => item.id === storylineId)
+      const node = storyline?.nodes.find((item) => item.id === nodeId)
+      if (!node) return state
+
+      try {
+        const [start, end] = getNodeSpan(node)
+        const hiddenStorylineIds = state.hiddenStorylineIds.filter((id) => id !== storylineId)
+        const panBounds = computePanBounds(
+          getVisibleStorylines(state.storylines, hiddenStorylineIds)
+        )
+        return {
+          hiddenStorylineIds,
+          panBounds,
+          viewportRange: clampViewportRange(
+            focusViewportRange(state.viewportRange, start, end),
+            panBounds
+          ),
+          viewportAnimationVersion: state.viewportAnimationVersion + 1,
+        }
+      } catch {
+        return state
+      }
+    }),
+
+  animateZoom: (factor, centerFraction = 0.5) => {
+    set((state) => ({
+      viewportRange: clampViewportRange(
+        zoomViewportRange(state.viewportRange, factor, centerFraction),
+        state.panBounds
+      ),
+      viewportAnimationVersion: state.viewportAnimationVersion + 1,
+    }))
   },
 
-  pan: (deltaFraction) => {
-    const { viewportRange, panBounds } = get()
-    const span = viewportRange.end - viewportRange.start
-    const delta = span * deltaFraction
-    const range = { start: viewportRange.start + delta, end: viewportRange.end + delta }
-    set({ viewportRange: clampViewportRange(range, panBounds) })
-  },
+  setDisplayDensity: (displayDensity) => set({ displayDensity }),
 
-  setOrientation: (o) => set({ orientation: o }),
+  toggleStorylineVisibility: (id) =>
+    set((state) => {
+      const hiddenStorylineIds = state.hiddenStorylineIds.includes(id)
+        ? state.hiddenStorylineIds.filter((storylineId) => storylineId !== id)
+        : [...state.hiddenStorylineIds, id]
+      const panBounds = computePanBounds(
+        getVisibleStorylines(state.storylines, hiddenStorylineIds)
+      )
+      return {
+        hiddenStorylineIds,
+        panBounds,
+        viewportRange: clampViewportRange(state.viewportRange, panBounds),
+      }
+    }),
 
   toggleTag: (tag) => {
     const { activeTags } = get()
@@ -204,6 +265,7 @@ export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
   removeStoryline: (id) =>
     set((state) => ({
       ...commitStorylines(state, state.storylines.filter((s) => s.id !== id)),
+      hiddenStorylineIds: state.hiddenStorylineIds.filter((storylineId) => storylineId !== id),
       focusedNodeId: state.storylines
         .find((storyline) => storyline.id === id)
         ?.nodes.some((node) => node.id === state.focusedNodeId)
@@ -244,24 +306,32 @@ export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
 
   loadData: (data) => {
     const fullRange = computeFullRange(data.storylines)
+    const panBounds = computePanBounds(data.storylines)
     set((state) => ({
       ...commitStorylines(state, data.storylines),
       fullRange,
-      viewportRange: fullRange,
+      panBounds,
+      viewportRange: clampViewportRange(fullRange, panBounds),
       activeTags: [],
       focusedNodeId: null,
+      hiddenStorylineIds: [],
+      canvasResetVersion: state.canvasResetVersion + 1,
     }))
   },
 
   resetToDefault: () => {
     const storylines = initialData.storylines as Storyline[]
     const fullRange = computeFullRange(storylines)
+    const panBounds = computePanBounds(storylines)
     set((state) => ({
       ...commitStorylines(state, storylines),
       fullRange,
-      viewportRange: fullRange,
+      panBounds,
+      viewportRange: clampViewportRange(fullRange, panBounds),
       activeTags: [],
       focusedNodeId: null,
+      hiddenStorylineIds: [],
+      canvasResetVersion: state.canvasResetVersion + 1,
     }))
   },
 
@@ -270,7 +340,12 @@ export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
       const previous = state.past.at(-1)
       if (!previous) return state
       return {
-        ...withRecomputedRanges(previous, state.viewportRange, state.activeTags),
+        ...withRecomputedRanges(
+          previous,
+          state.viewportRange,
+          state.activeTags,
+          state.hiddenStorylineIds
+        ),
         past: state.past.slice(0, -1),
         future: [state.storylines, ...state.future].slice(0, HISTORY_LIMIT),
         focusedNodeId: null,
@@ -282,35 +357,54 @@ export const useTimelineStore = create<TimelineState>()(persist((set, get) => ({
       const next = state.future[0]
       if (!next) return state
       return {
-        ...withRecomputedRanges(next, state.viewportRange, state.activeTags),
+        ...withRecomputedRanges(
+          next,
+          state.viewportRange,
+          state.activeTags,
+          state.hiddenStorylineIds
+        ),
         past: [...state.past, state.storylines].slice(-HISTORY_LIMIT),
         future: state.future.slice(1),
         focusedNodeId: null,
       }
     }),
 
-  hydrateFromParams: ({ tags, tagMode, range, orientation, focus }) => {
+  hydrateFromParams: ({ tags, tagMode, range, focus }) => {
     set((state) => ({
       ...(tags ? { activeTags: tags } : {}),
       ...(tagMode ? { tagMode } : {}),
       ...(range ? { viewportRange: clampViewportRange(range, state.panBounds) } : {}),
-      ...(orientation ? { orientation } : {}),
       ...(focus ? { focusedNodeId: focus } : {}),
     }))
   },
 }), {
   name: 'historical-timeline-data',
   version: 1,
-  partialize: (state) => ({ storylines: state.storylines }),
+  partialize: (state) => ({
+    storylines: state.storylines,
+    displayDensity: state.displayDensity,
+    hiddenStorylineIds: state.hiddenStorylineIds,
+  }),
   merge: (persistedState, currentState) => {
     try {
-      const persisted = persistedState as { storylines?: unknown }
+      const persisted = persistedState as {
+        storylines?: unknown
+        displayDensity?: unknown
+        hiddenStorylineIds?: unknown
+      }
       const data = parseTimelineData({ storylines: persisted.storylines })
       const fullRange = computeFullRange(data.storylines)
+      const hiddenStorylineIds = Array.isArray(persisted.hiddenStorylineIds)
+        ? persisted.hiddenStorylineIds.filter(
+            (id): id is string =>
+              typeof id === 'string' && data.storylines.some((storyline) => storyline.id === id)
+          )
+        : currentState.hiddenStorylineIds
       return {
         ...currentState,
-        ...withRecomputedRanges(data.storylines, fullRange),
-        viewportRange: fullRange,
+        ...withRecomputedRanges(data.storylines, fullRange, undefined, hiddenStorylineIds),
+        displayDensity: parseDisplayDensity(persisted.displayDensity) ?? currentState.displayDensity,
+        hiddenStorylineIds,
         past: [],
         future: [],
       }

@@ -1,4 +1,4 @@
-import type { Storyline } from "../../types";
+import type { DisplayDensity, Storyline } from "../../types";
 import { assignLanes, type LanedNode } from "./laneAssignment";
 import {
   assignLabelRows,
@@ -48,22 +48,63 @@ export interface StorylineLayout {
 // stay an integer — see labelStagger.ts) so a label staggered a couple of
 // rows out from its own lane still lands with real clearance before the
 // next lane, not just barely-not-touching it.
-export const LANE_HEIGHT = 44;
-const MIN_BAND = 36;
-const BAND_GAP = 14;
-const LABEL_FONT_SIZE = 10;
-export const LABEL_BASE_OFFSET = 16;
-export const LABEL_ROW_STEP = 22;
-/** perpendicular pixel gap from a label to its hover tooltip (Timeline.tsx reuses this so band height reserves room for it) */
-export const HOVER_TOOLTIP_GAP = 14;
-/** half the marker circle's rendered footprint, in px, used for marker-vs-marker collision only */
-const MARKER_HALF_FOOTPRINT = 7;
-const MIN_BAR_HALF_WIDTH = 4;
+export interface TimelineMetrics {
+  laneHeight: number;
+  minBand: number;
+  bandGap: number;
+  labelFontSize: number;
+  labelBaseOffset: number;
+  labelRowStep: number;
+  hoverTooltipGap: number;
+  markerHalfFootprint: number;
+  minBarHalfWidth: number;
+  tickFontSize: number;
+  storylineFontSize: number;
+  tooltipFontSize: number;
+  clusterFontSize: number;
+  superscriptFontSize: number;
+}
+
+export const TIMELINE_METRICS: Record<DisplayDensity, TimelineMetrics> = {
+  comfortable: {
+    laneHeight: 52,
+    minBand: 44,
+    bandGap: 18,
+    labelFontSize: 12,
+    labelBaseOffset: 20,
+    labelRowStep: 26,
+    hoverTooltipGap: 18,
+    markerHalfFootprint: 8,
+    minBarHalfWidth: 5,
+    tickFontSize: 13,
+    storylineFontSize: 14,
+    tooltipFontSize: 12,
+    clusterFontSize: 11,
+    superscriptFontSize: 9,
+  },
+  compact: {
+    laneHeight: 44,
+    minBand: 36,
+    bandGap: 14,
+    labelFontSize: 10,
+    labelBaseOffset: 16,
+    labelRowStep: 22,
+    hoverTooltipGap: 14,
+    markerHalfFootprint: 7,
+    minBarHalfWidth: 4,
+    tickFontSize: 11,
+    storylineFontSize: 12,
+    tooltipFontSize: 9,
+    clusterFontSize: 9,
+    superscriptFontSize: 7,
+  },
+};
 
 export interface LayoutOptions {
   /** projects a time value to a pixel position along the time axis at the current zoom/pan */
   timeToPos: (t: number) => number;
   isHorizontal: boolean;
+  metrics: TimelineMetrics;
   /** extra clearance to reserve before the first "above" band (e.g. tick labels in vertical mode) */
   aboveReserved?: number;
   /** extra clearance to reserve before the first "below" band (e.g. tick labels in horizontal mode) */
@@ -91,8 +132,9 @@ export function computeStorylineLayouts(
   options: LayoutOptions,
 ): { above: StorylineLayout[]; below: StorylineLayout[] } {
   const build = (list: Storyline[], reserved: number) => {
+    const metrics = options.metrics;
     const sorted = [...list].sort((a, b) => a.order - b.order);
-    let cumulative = BAND_GAP + reserved;
+    let cumulative = metrics.bandGap + reserved;
     const layouts: StorylineLayout[] = [];
     for (const storyline of sorted) {
       // Lanes are assigned over the storyline's *entire* node list, not just
@@ -160,8 +202,8 @@ export function computeStorylineLayouts(
           )!;
           const isRange = n.node.timeRange !== undefined;
           const halfFootprint = isRange
-            ? Math.max(Math.abs(endPos - startPos), MIN_BAR_HALF_WIDTH * 2) / 2
-            : MARKER_HALF_FOOTPRINT;
+            ? Math.max(Math.abs(endPos - startPos), metrics.minBarHalfWidth * 2) / 2
+            : metrics.markerHalfFootprint;
           return {
             id: n.node.id,
             axisPos: (startPos + endPos) / 2,
@@ -186,8 +228,8 @@ export function computeStorylineLayouts(
         const { start: startPos, end: endPos } = renderPosById.get(n.node.id)!;
         const axisPos = (startPos + endPos) / 2;
         const halfExtent = options.isHorizontal
-          ? measureTextWidth(n.node.title, LABEL_FONT_SIZE) / 2 + 4
-          : LABEL_FONT_SIZE / 2 + 4;
+          ? measureTextWidth(n.node.title, metrics.labelFontSize) / 2 + 4
+          : metrics.labelFontSize / 2 + 4;
         return { id: n.node.id, axisPos, halfExtent, lane: n.lane };
       });
       // No fixed cap on stagger rows — a dense cluster grows the band taller
@@ -197,9 +239,9 @@ export function computeStorylineLayouts(
       const maxLabelRows = Math.max(1, labelCandidates.length);
       const placements = assignLabelRows(labelCandidates, maxLabelRows, {
         laneOccupancy,
-        laneHeight: LANE_HEIGHT,
-        baseOffset: LABEL_BASE_OFFSET,
-        rowStep: LABEL_ROW_STEP,
+        laneHeight: metrics.laneHeight,
+        baseOffset: metrics.labelBaseOffset,
+        rowStep: metrics.labelRowStep,
       });
       const placementById = new Map(placements.map((p) => [p.id, p]));
       const halfExtentById = new Map(
@@ -226,7 +268,7 @@ export function computeStorylineLayouts(
         return {
           ...n,
           clustered,
-          labelOffset: LABEL_BASE_OFFSET + (p ? p.row : 0) * LABEL_ROW_STEP,
+          labelOffset: metrics.labelBaseOffset + (p ? p.row : 0) * metrics.labelRowStep,
           labelShift: displayAxisPos - axisPos,
           renderStartPos,
           renderEndPos,
@@ -238,10 +280,10 @@ export function computeStorylineLayouts(
       // so hovering the furthest-staggered label doesn't poke into whatever
       // comes after this band.
       const labelSpace =
-        LABEL_BASE_OFFSET +
-        maxRowUsed * LABEL_ROW_STEP +
-        LABEL_FONT_SIZE +
-        HOVER_TOOLTIP_GAP +
+        metrics.labelBaseOffset +
+        maxRowUsed * metrics.labelRowStep +
+        metrics.labelFontSize +
+        metrics.hoverTooltipGap +
         10;
       // Permanent clusters render only the first node's label, so reserve
       // space for one label per cluster (excluded from the normal stagger pass).
@@ -249,16 +291,16 @@ export function computeStorylineLayouts(
         .filter((c) => c.permanent)
         .reduce((max, c) => {
           const depth =
-            c.lane * LANE_HEIGHT +
-            LABEL_BASE_OFFSET +
-            LABEL_FONT_SIZE +
-            HOVER_TOOLTIP_GAP +
+            c.lane * metrics.laneHeight +
+            metrics.labelBaseOffset +
+            metrics.labelFontSize +
+            metrics.hoverTooltipGap +
             10;
           return Math.max(max, depth);
         }, 0);
       const bandHeight = Math.max(
-        MIN_BAND,
-        laneCount * LANE_HEIGHT,
+        metrics.minBand,
+        laneCount * metrics.laneHeight,
         labelSpace,
         maxPermClusterSpace,
       );
@@ -270,7 +312,7 @@ export function computeStorylineLayouts(
         lanedNodes,
         clusters,
       });
-      cumulative += bandHeight + BAND_GAP;
+      cumulative += bandHeight + metrics.bandGap;
     }
     return layouts;
   };

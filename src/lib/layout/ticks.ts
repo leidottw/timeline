@@ -1,19 +1,17 @@
-const NICE_STEPS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000]
-
 export function chooseTickStep(span: number, targetTicks = 6): number {
+  if (!Number.isFinite(span) || span <= 0 || targetTicks <= 0) return 1
   const raw = span / targetTicks
-  for (const step of NICE_STEPS) {
-    if (step >= raw) return step
-  }
-  return NICE_STEPS[NICE_STEPS.length - 1]
+  const magnitude = 10 ** Math.floor(Math.log10(raw))
+  const normalized = raw / magnitude
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  return nice * magnitude
 }
 
 export function generateTicks(start: number, end: number, targetTicks = 6): number[] {
   const step = chooseTickStep(end - start, targetTicks)
   const first = Math.ceil(start / step) * step
-  const ticks: number[] = []
-  for (let t = first; t <= end; t += step) {
-    ticks.push(Math.round(t))
-  }
-  return ticks
+  const count = Math.max(0, Math.min(100, Math.floor((end - first) / step + 1e-9) + 1))
+  return Array.from({ length: count }, (_, index) =>
+    Number((first + index * step).toPrecision(12))
+  )
 }

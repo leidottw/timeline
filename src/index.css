@@ -14,9 +14,409 @@ html, body, #root {
   font-family: system-ui, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
 
+html,
+body,
+#root {
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
+  display: none;
+}
+
 body {
   background: #f7f6f3;
   color: #1f1d1a;
+}
+
+.timeline-app {
+  font-size: 1rem;
+  line-height: 1.5;
+  overscroll-behavior: none;
+}
+
+.timeline-shell {
+  background-color: #faf8f3;
+  background-image:
+    radial-gradient(ellipse at 12% 0%, rgb(255 255 255 / 72%), transparent 42%),
+    linear-gradient(135deg, rgb(137 112 72 / 2.5%), transparent 36% 68%, rgb(92 72 44 / 2%));
+  box-shadow:
+    0 16px 40px rgb(63 49 30 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 80%);
+}
+
+.timeline-canvas {
+  isolation: isolate;
+  background-color: #f8f5ed;
+  background-image:
+    radial-gradient(circle, rgb(125 112 91 / 24%) 1px, transparent 1.15px),
+    repeating-linear-gradient(0deg, rgb(93 78 56 / 1.6%) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgb(116 96 67 / 1.2%) 0 1px, transparent 1px 5px),
+    radial-gradient(ellipse at 20% 12%, rgb(255 255 255 / 62%), transparent 55%),
+    linear-gradient(148deg, rgb(255 255 255 / 28%), transparent 38% 72%, rgb(131 105 66 / 3.5%));
+  background-size: 24px 24px, 100% 4px, 5px 100%, 100% 100%, 100% 100%;
+}
+
+.timeline-canvas::after {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  content: "";
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='.48'/%3E%3C/svg%3E");
+  opacity: 0.032;
+  mix-blend-mode: multiply;
+}
+
+.workspace-mode-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.15rem;
+  border: 1px solid rgb(0 0 0 / 9%);
+  border-radius: 0.55rem;
+  background: rgb(255 255 255 / 58%);
+  padding: 0.2rem;
+}
+
+.workspace-mode-toggle button {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  color: #71695f;
+  font-size: 0.75rem;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.workspace-mode-toggle button:hover {
+  color: #1f1d1a;
+}
+
+.workspace-mode-toggle button.is-active {
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(37 99 235 / 28%);
+}
+
+.workspace-sidebar {
+  min-width: 0;
+  background: rgb(252 251 247 / 94%);
+  backdrop-filter: blur(14px);
+}
+
+.workspace-sidebar-left {
+  display: flex;
+  width: 17.5rem;
+  flex: none;
+  flex-direction: column;
+  border-right: 1px solid rgb(0 0 0 / 9%);
+}
+
+.workspace-sidebar-right {
+  display: flex;
+  width: 22rem;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid rgb(0 0 0 / 9%);
+  background: rgb(255 255 255 / 92%);
+}
+
+.workspace-pane-header,
+.workspace-inspector-bar {
+  display: flex;
+  min-height: 3.5rem;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid rgb(0 0 0 / 8%);
+  padding: 0.625rem 0.75rem;
+}
+
+.workspace-pane-header h2 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.workspace-pane-eyebrow {
+  margin-bottom: 0.1rem;
+  color: #8a8176;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+.workspace-inspector-bar {
+  min-height: 2.5rem;
+  padding-block: 0.35rem;
+  color: #71695f;
+  font-size: 0.75rem;
+}
+
+.workspace-icon-button,
+.workspace-tree-action,
+.workspace-tree-toggle {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.4rem;
+  color: #8a8176;
+}
+
+.workspace-icon-button:hover,
+.workspace-tree-action:hover,
+.workspace-tree-toggle:hover {
+  background: rgb(37 99 235 / 8%);
+  color: #1d4ed8;
+}
+
+.workspace-tree {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem;
+}
+
+.workspace-storyline {
+  margin-bottom: 0.2rem;
+}
+
+.workspace-storyline.is-hidden {
+  opacity: 0.55;
+}
+
+.workspace-storyline-row {
+  display: flex;
+  min-height: 2.35rem;
+  align-items: center;
+  border-radius: 0.5rem;
+}
+
+.workspace-storyline-row:hover {
+  background: rgb(0 0 0 / 3%);
+}
+
+.workspace-storyline-row.is-selected {
+  background: rgb(37 99 235 / 9%);
+}
+
+.workspace-tree-toggle {
+  height: 2.25rem;
+  width: 1.75rem;
+}
+
+.workspace-storyline-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.2rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.workspace-color-dot {
+  height: 0.6rem;
+  width: 0.6rem;
+  flex: none;
+  border-radius: 999px;
+}
+
+.workspace-count {
+  margin-left: auto;
+  color: #a39b90;
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+
+.workspace-tree-action {
+  height: 2.1rem;
+  width: 1.85rem;
+  font-size: 0.8125rem;
+}
+
+.workspace-node-list {
+  margin: 0.15rem 0 0.35rem 1.45rem;
+  border-left: 1px solid rgb(0 0 0 / 9%);
+  padding-left: 0.4rem;
+}
+
+.workspace-node-row,
+.workspace-add-node-empty {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.45rem;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  color: #514b43;
+  text-align: left;
+  font-size: 0.75rem;
+}
+
+.workspace-node-row:hover,
+.workspace-add-node-empty:hover {
+  background: rgb(0 0 0 / 4%);
+}
+
+.workspace-node-row.is-selected {
+  background: rgb(37 99 235 / 10%);
+  color: #1d4ed8;
+}
+
+.workspace-node-time {
+  width: 4.9rem;
+  flex: none;
+  overflow: hidden;
+  color: #9a9287;
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-add-node-empty {
+  color: #9a9287;
+}
+
+.workspace-empty-state,
+.workspace-inspector-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1.5rem;
+  color: #8a8176;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.workspace-inspector-empty i {
+  color: #b2aaa0;
+  font-size: 1.75rem;
+}
+
+.workspace-inspector-empty h2 {
+  color: #514b43;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.workspace-collapsed-rail {
+  display: flex;
+  width: 2.4rem;
+  flex: none;
+  justify-content: center;
+  border-color: rgb(0 0 0 / 8%);
+  background: rgb(250 248 243 / 72%);
+  padding-top: 0.6rem;
+}
+
+.workspace-collapsed-left {
+  border-right-width: 1px;
+}
+
+.workspace-collapsed-right {
+  border-left-width: 1px;
+}
+
+.workspace-collapsed-rail button {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.4rem;
+  color: #7d756b;
+}
+
+.workspace-collapsed-rail button:hover {
+  background: rgb(37 99 235 / 8%);
+  color: #1d4ed8;
+}
+
+.editor-panel-content {
+  height: 100%;
+  min-height: 0;
+}
+
+.editor-panel-form {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+  background: transparent;
+}
+
+.timeline-app[data-density="compact"] .workspace-sidebar-left {
+  width: 16rem;
+}
+
+.timeline-app[data-density="compact"] .workspace-sidebar-right {
+  width: 20rem;
+}
+
+@media (max-width: 960px) {
+  .workspace-sidebar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    box-shadow: 0 18px 50px rgb(59 47 31 / 20%);
+  }
+
+  .workspace-sidebar-left {
+    left: 0;
+    width: min(19rem, calc(100% - 3rem));
+  }
+
+  .workspace-sidebar-right {
+    right: 0;
+    z-index: 40;
+    width: min(23rem, calc(100% - 3rem));
+  }
+}
+
+/* Comfortable is the default reading mode. It deliberately raises the
+   smallest Tailwind utility sizes without changing compact mode. */
+.timeline-app[data-density="comfortable"] .text-xs {
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+}
+
+.timeline-app[data-density="comfortable"] .text-sm {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.timeline-app[data-density="comfortable"] .text-\[10px\] {
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+}
+
+.timeline-app[data-density="comfortable"] .text-\[11px\] {
+  font-size: 0.8125rem;
+  line-height: 1.2rem;
+}
+
+.timeline-app[data-density="comfortable"] .text-\[15px\] {
+  font-size: 1.0625rem;
+  line-height: 1.5rem;
 }
 
 button,
@@ -29,6 +429,12 @@ button:focus-visible,
 a:focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
+}
+
+/* SVG timeline items receive focus on pointer click in some browsers.
+   Hide that mouse-only outline while keeping the keyboard focus indicator. */
+[data-timeline-action]:focus:not(:focus-visible) {
+  outline: none;
 }
 
 .form-control {
@@ -84,6 +490,34 @@ a:focus-visible {
   background: #fef2f2;
 }
 
+.density-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  border-radius: 0.375rem;
+  background: #f5f5f5;
+  padding: 0.25rem;
+  font-size: 0.75rem;
+  color: #737373;
+}
+
+.density-toggle button {
+  min-height: 1.75rem;
+  border-radius: 0.25rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.density-toggle button:hover {
+  color: #262626;
+}
+
+.density-toggle .is-active {
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
 .toolbar-icon-button {
   display: flex;
   height: 1.5rem;
@@ -102,4 +536,34 @@ a:focus-visible {
 .toolbar-icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.3;
+}
+
+.timeline-app[data-density="comfortable"] .form-control {
+  min-height: 2.75rem;
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+}
+
+.timeline-app[data-density="comfortable"] .btn-primary,
+.timeline-app[data-density="comfortable"] .btn-secondary,
+.timeline-app[data-density="comfortable"] .btn-danger {
+  min-height: 2.5rem;
+  font-size: 0.875rem;
+}
+
+.timeline-app[data-density="comfortable"] .toolbar-icon-button {
+  height: 2rem;
+  width: 2rem;
+}
+
+.timeline-app[data-density="comfortable"] .density-toggle {
+  font-size: 0.875rem;
+}
+
+.timeline-app[data-density="comfortable"] .node-detail-card {
+  width: 20rem;
+}
+
+.timeline-app[data-density="comfortable"] .storyline-node-popover {
+  width: 22rem;
 }

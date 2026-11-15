@@ -1,20 +1,18 @@
 import { useEffect, useRef } from 'react'
 import debounce from 'lodash.debounce'
 import { useTimelineStore } from '../../store/useTimelineStore'
-import type { Orientation, TagMode } from '../../types'
+import type { TagMode } from '../../types'
 
 function parseParams(): {
   tags?: string[]
   tagMode?: TagMode
   range?: { start: number; end: number }
-  orientation?: Orientation
   focus?: string
 } {
   const params = new URLSearchParams(window.location.search)
   const tagsParam = params.get('tags')
   const tagModeParam = params.get('tagMode')
   const rangeParam = params.get('range')
-  const orientationParam = params.get('orientation')
   const focusParam = params.get('focus')
 
   let range: { start: number; end: number } | undefined
@@ -27,13 +25,12 @@ function parseParams(): {
     tags: tagsParam ? tagsParam.split(',').filter(Boolean) : undefined,
     tagMode: tagModeParam === 'and' || tagModeParam === 'or' ? tagModeParam : undefined,
     range,
-    orientation: orientationParam === 'horizontal' || orientationParam === 'vertical' ? orientationParam : undefined,
     focus: focusParam ?? undefined,
   }
 }
 
 /**
- * Reads filter/viewport/orientation/focus state from the URL on mount,
+ * Reads filter/viewport/focus state from the URL on mount,
  * and writes state changes back to the URL (debounced, via replaceState)
  * so the current view can be shared as a link.
  */
@@ -44,7 +41,6 @@ export function useUrlSync() {
   const activeTags = useTimelineStore((s) => s.activeTags)
   const tagMode = useTimelineStore((s) => s.tagMode)
   const viewportRange = useTimelineStore((s) => s.viewportRange)
-  const orientation = useTimelineStore((s) => s.orientation)
   const focusedNodeId = useTimelineStore((s) => s.focusedNodeId)
 
   useEffect(() => {
@@ -59,7 +55,6 @@ export function useUrlSync() {
         activeTags: string[]
         tagMode: TagMode
         viewportRange: { start: number; end: number }
-        orientation: Orientation
         focusedNodeId: string | null
       }) => {
         const params = new URLSearchParams()
@@ -69,7 +64,6 @@ export function useUrlSync() {
           'range',
           `${state.viewportRange.start.toFixed(2)},${state.viewportRange.end.toFixed(2)}`
         )
-        params.set('orientation', state.orientation)
         if (state.focusedNodeId) params.set('focus', state.focusedNodeId)
 
         const newUrl = `${window.location.pathname}?${params.toString()}`
@@ -81,6 +75,6 @@ export function useUrlSync() {
 
   useEffect(() => {
     if (!hydrated.current) return
-    writeUrl({ activeTags, tagMode, viewportRange, orientation, focusedNodeId })
-  }, [activeTags, tagMode, viewportRange, orientation, focusedNodeId, writeUrl])
+    writeUrl({ activeTags, tagMode, viewportRange, focusedNodeId })
+  }, [activeTags, tagMode, viewportRange, focusedNodeId, writeUrl])
 }
