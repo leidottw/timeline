@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "storylines": [
     {
       "id": "eastern-civilization",
@@ -432,7 +433,6 @@
         {
           "id": "three-kingdoms-chibi",
           "title": "三國鼎立與赤壁之戰",
-          "time": "0220",
           "timeRange": {
             "start": "0208",
             "end": "0280"
@@ -448,7 +448,6 @@
         {
           "id": "western-jin-unity-eight-princes",
           "title": "西晉統一與八王之亂",
-          "time": "0280",
           "timeRange": {
             "start": "0280",
             "end": "0306"
@@ -464,7 +463,6 @@
         {
           "id": "northern-wei-xiaowen-sinicization",
           "title": "北魏孝文帝漢化改革",
-          "time": "0494",
           "timeRange": {
             "start": "0485",
             "end": "0499"
@@ -481,7 +479,6 @@
         {
           "id": "sui-dynasty-founded-imperial-exam",
           "title": "隋朝統一與科舉制創立",
-          "time": "0589",
           "timeRange": {
             "start": "0589",
             "end": "0605"
@@ -497,7 +494,6 @@
         {
           "id": "sui-grand-canal",
           "title": "大運河開鑿",
-          "time": "0605",
           "timeRange": {
             "start": "0605",
             "end": "0610"
@@ -513,7 +509,6 @@
         {
           "id": "tang-dynasty-zhenguan-governance",
           "title": "唐朝建立與貞觀之治",
-          "time": "0618",
           "timeRange": {
             "start": "0618",
             "end": "0649"
@@ -530,7 +525,6 @@
         {
           "id": "xuanzang-journey-west",
           "title": "玄奘西行求法",
-          "time": "0627",
           "timeRange": {
             "start": "0627",
             "end": "0645"
@@ -545,7 +539,6 @@
         {
           "id": "wu-zetian-reign",
           "title": "武則天稱帝（武周）",
-          "time": "0690",
           "timeRange": {
             "start": "0690",
             "end": "0705"
@@ -561,7 +554,6 @@
         {
           "id": "an-shi-rebellion",
           "title": "安史之亂",
-          "time": "0755",
           "timeRange": {
             "start": "0755",
             "end": "0763"
@@ -589,7 +581,6 @@
         {
           "id": "movable-type-printing-bisheng",
           "title": "活字印刷術與畢昇",
-          "time": "1041",
           "timeRange": {
             "start": "1041",
             "end": "1048"
@@ -605,7 +596,6 @@
         {
           "id": "wang-anshi-reforms",
           "title": "王安石變法",
-          "time": "1069",
           "timeRange": {
             "start": "1069",
             "end": "1085"
@@ -644,7 +634,6 @@
         {
           "id": "yuan-dynasty-founded-province-system",
           "title": "元朝建立與行省制",
-          "time": "1271",
           "timeRange": {
             "start": "1271",
             "end": "1279"
@@ -659,7 +648,6 @@
         {
           "id": "ming-dynasty-founded-abolish-chancellor",
           "title": "明朝建立與廢除宰相",
-          "time": "1368",
           "timeRange": {
             "start": "1368",
             "end": "1380"
@@ -675,7 +663,6 @@
         {
           "id": "zhenghe-voyages",
           "title": "鄭和下西洋",
-          "time": "1405",
           "timeRange": {
             "start": "1405",
             "end": "1433"
@@ -691,7 +678,6 @@
         {
           "id": "qi-jiguang-anti-wako",
           "title": "戚繼光抗倭",
-          "time": "1555",
           "timeRange": {
             "start": "1555",
             "end": "1566"
@@ -740,7 +726,6 @@
         {
           "id": "opium-war-nanjing-treaty",
           "title": "鴉片戰爭與南京條約",
-          "time": "1840",
           "timeRange": {
             "start": "1840",
             "end": "1842"
@@ -755,7 +740,6 @@
         {
           "id": "taiping-rebellion",
           "title": "太平天國運動",
-          "time": "1851-01-11",
           "timeRange": {
             "start": "1851-01-11",
             "end": "1864-07-19"
@@ -771,7 +755,6 @@
         {
           "id": "self-strengthening-movement",
           "title": "洋務運動",
-          "time": "1861",
           "timeRange": {
             "start": "1861",
             "end": "1895"
@@ -787,7 +770,6 @@
         {
           "id": "meiji-restoration",
           "title": "日本明治維新",
-          "time": "1868",
           "timeRange": {
             "start": "1868",
             "end": "1912"
@@ -803,7 +785,6 @@
         {
           "id": "first-sino-japanese-war",
           "title": "甲午戰爭與馬關條約",
-          "time": "1894",
           "timeRange": {
             "start": "1894",
             "end": "1895"
@@ -818,7 +799,6 @@
         {
           "id": "xinhai-revolution-republic-of-china",
           "title": "辛亥革命與中華民國成立",
-          "time": "1911-10-10",
           "timeRange": {
             "start": "1911-10-10",
             "end": "1912-02-12"
@@ -845,7 +825,6 @@
         {
           "id": "second-sino-japanese-war",
           "title": "中國抗日戰爭",
-          "time": "1937-07-07",
           "timeRange": {
             "start": "1937-07-07",
             "end": "1945-09-02"
@@ -871,7 +850,6 @@
         {
           "id": "korean-war",
           "title": "韓戰爆發",
-          "time": "1950-06-25",
           "timeRange": {
             "start": "1950-06-25",
             "end": "1953-07-27"
@@ -886,7 +864,6 @@
         {
           "id": "east-asian-economic-miracle",
           "title": "東亞經濟奇蹟（亞洲四小龍崛起）",
-          "time": "1960",
           "timeRange": {
             "start": "1960",
             "end": "1990"
@@ -902,7 +879,6 @@
         {
           "id": "china-reform-opening-shenzhen",
           "title": "鄧小平改革開放與深圳特區",
-          "time": "1978-12-18",
           "timeRange": {
             "start": "1978-12-18",
             "end": "1980-08-26"
@@ -918,7 +894,6 @@
         {
           "id": "hong-kong-macau-handover",
           "title": "香港與澳門回歸",
-          "time": "1997-07-01",
           "timeRange": {
             "start": "1997-07-01",
             "end": "1999-12-20"
@@ -1423,7 +1398,6 @@
         {
           "id": "black-death-in-europe",
           "title": "黑死病橫掃歐洲",
-          "time": "1347",
           "timeRange": {
             "start": "1347",
             "end": "1351"
@@ -1438,7 +1412,6 @@
         {
           "id": "italian-renaissance",
           "title": "義大利文藝復興運動興起",
-          "time": "1350",
           "timeRange": {
             "start": "1350",
             "end": "1600"
@@ -1498,7 +1471,6 @@
         {
           "id": "the-enlightenment",
           "title": "歐洲啟蒙運動興起",
-          "time": "1715",
           "timeRange": {
             "start": "1715",
             "end": "1789"
@@ -1682,7 +1654,6 @@
         {
           "id": "maurya-ashoka-buddhism",
           "title": "印度孔雀王朝阿育王即位與佛教傳播",
-          "time": "-0268",
           "timeRange": {
             "start": "-0268",
             "end": "-0232"
@@ -1699,7 +1670,6 @@
         {
           "id": "gupta-empire-golden-age",
           "title": "印度笈多王朝建立與梵語文化、數學黃金期",
-          "time": "0320",
           "timeRange": {
             "start": "0320",
             "end": "0550"
@@ -1728,7 +1698,6 @@
         {
           "id": "rashidun-caliphate-era",
           "title": "阿拉伯帝國建立與四大哈里發時期",
-          "time": "0632",
           "timeRange": {
             "start": "0632",
             "end": "0661"
@@ -1745,7 +1714,6 @@
         {
           "id": "umayyad-spain-expansion",
           "title": "奧米亞王朝建立與西班牙擴張",
-          "time": "0661",
           "timeRange": {
             "start": "0661",
             "end": "0750"
@@ -1761,7 +1729,6 @@
         {
           "id": "abbasid-translation-movement",
           "title": "阿拔斯王朝建立與翻譯運動",
-          "time": "0750",
           "timeRange": {
             "start": "0750",
             "end": "1258"
@@ -1777,7 +1744,6 @@
         {
           "id": "delhi-sultanate-founded",
           "title": "德里蘇丹國建立與伊斯蘭教傳入印度",
-          "time": "1206",
           "timeRange": {
             "start": "1206",
             "end": "1526"
@@ -1818,7 +1784,6 @@
         {
           "id": "mughal-akbar-golden-age",
           "title": "蒙兀兒帝國建立與阿克巴大帝治世",
-          "time": "1526",
           "timeRange": {
             "start": "1526",
             "end": "1605"
@@ -1974,7 +1939,6 @@
         {
           "id": "transatlantic-slave-trade",
           "title": "跨大西洋黑奴貿易與三角貿易興起",
-          "time": "1518",
           "timeRange": {
             "start": "1518",
             "end": "1807"
@@ -1989,7 +1953,6 @@
         {
           "id": "spanish-conquest-aztec-inca",
           "title": "西班牙征服阿茲特克與印加帝國",
-          "time": "1521",
           "timeRange": {
             "start": "1519",
             "end": "1572"
@@ -2005,7 +1968,6 @@
         {
           "id": "magellan-circumnavigation",
           "title": "麥哲倫船隊完成首次環球航行",
-          "time": "1522-09-06",
           "timeRange": {
             "start": "1519-09-20",
             "end": "1522-09-06"
@@ -2031,7 +1993,6 @@
         {
           "id": "thirty-years-war-westphalia",
           "title": "三十年戰爭與西發里亞和約",
-          "time": "1648-10-24",
           "timeRange": {
             "start": "1618-05-23",
             "end": "1648-10-24"
@@ -2046,7 +2007,6 @@
         {
           "id": "seven-years-war",
           "title": "七年戰爭：首次全球性戰爭",
-          "time": "1756",
           "timeRange": {
             "start": "1756",
             "end": "1763"
@@ -2061,7 +2021,6 @@
         {
           "id": "latin-american-independence",
           "title": "拉丁美洲獨立運動",
-          "time": "1810",
           "timeRange": {
             "start": "1808",
             "end": "1833"
@@ -2088,7 +2047,6 @@
         {
           "id": "berlin-conference",
           "title": "柏林西非會議與歐洲瓜分非洲",
-          "time": "1884-11-15",
           "timeRange": {
             "start": "1884-11-15",
             "end": "1885-02-26"
@@ -2114,7 +2072,6 @@
         {
           "id": "cuban-missile-crisis",
           "title": "古巴飛彈危機",
-          "time": "1962-10-16",
           "timeRange": {
             "start": "1962-10-16",
             "end": "1962-10-28"
@@ -2185,7 +2142,6 @@
         {
           "id": "covid-19-pandemic",
           "title": "COVID-19全球大流行",
-          "time": "2020-03-11",
           "timeRange": {
             "start": "2019-12",
             "end": "2023-05-05"

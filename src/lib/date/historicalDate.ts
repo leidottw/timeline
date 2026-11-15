@@ -28,11 +28,26 @@ export function parseHistoricalDate(input: string): ParsedDate {
     throw new Error(`Invalid historical date: "${input}"`)
   }
   const [, yearStr, monthStr, dayStr] = match
-  return {
+  const parsed = {
     year: parseInt(yearStr, 10),
     month: monthStr ? parseInt(monthStr, 10) : undefined,
     day: dayStr ? parseInt(dayStr, 10) : undefined,
   }
+
+  if (parsed.month !== undefined && (parsed.month < 1 || parsed.month > 12)) {
+    throw new Error(`Invalid month in historical date: "${input}"`)
+  }
+
+  if (parsed.day !== undefined) {
+    const month = parsed.month ?? 1
+    const leapYear = parsed.year % 4 === 0 && (parsed.year % 100 !== 0 || parsed.year % 400 === 0)
+    const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if (parsed.day < 1 || parsed.day > daysInMonth[month - 1]) {
+      throw new Error(`Invalid day in historical date: "${input}"`)
+    }
+  }
+
+  return parsed
 }
 
 /** Convert a parsed date to a sortable fractional-year number. */
@@ -83,11 +98,14 @@ export function getNodeSpan(node: {
   time?: string
   timeRange?: { start: string; end: string }
 }): [number, number] {
+  if (node.time && node.timeRange) {
+    throw new Error('Node cannot have both time and timeRange')
+  }
   if (node.timeRange) {
-    return [
-      dateStringToNumber(node.timeRange.start),
-      dateStringToNumber(node.timeRange.end),
-    ]
+    const start = dateStringToNumber(node.timeRange.start)
+    const end = dateStringToNumber(node.timeRange.end)
+    if (start > end) throw new Error('Node timeRange start must not be after end')
+    return [start, end]
   }
   if (node.time) {
     const n = dateStringToNumber(node.time)

@@ -32,6 +32,7 @@ export interface Storyline {
 }
 
 export interface TimelineData {
+  schemaVersion?: 1
   storylines: Storyline[]
 }
 
