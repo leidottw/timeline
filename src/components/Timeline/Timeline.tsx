@@ -70,6 +70,9 @@ export function Timeline() {
     startY: number;
     range: typeof viewportRange;
   } | null>(null);
+  const dragFrame = useRef<number | null>(null);
+  const pendingDragRange = useRef<typeof viewportRange | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState(DEFAULT_AXIS_LENGTH);
   // Node IDs to show when a permanent cluster (same-time points) is clicked.
@@ -92,6 +95,13 @@ export function Timeline() {
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(
+    () => () => {
+      if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current);
+    },
+    [],
+  );
 
   const axisLength = isHorizontal
     ? Math.max(MIN_AXIS_LENGTH, measuredWidth - MARGIN_START - MARGIN_END)
@@ -204,12 +214,14 @@ export function Timeline() {
   }
 
   function handlePointerDown(e: React.PointerEvent) {
+    if ((e.target as Element).closest("[data-timeline-action]")) return;
     (e.target as Element).setPointerCapture(e.pointerId);
     dragState.current = {
       startX: e.clientX,
       startY: e.clientY,
       range: viewportRange,
     };
+    setIsDragging(true);
   }
 
   function handlePointerMove(e: React.PointerEvent) {
@@ -224,14 +236,21 @@ export function Timeline() {
     const deltaTime =
       -(deltaSvg / axisLength) *
       (dragState.current.range.end - dragState.current.range.start);
-    setViewportRange({
+    pendingDragRange.current = {
       start: dragState.current.range.start + deltaTime,
       end: dragState.current.range.end + deltaTime,
-    });
+    };
+    if (dragFrame.current === null) {
+      dragFrame.current = requestAnimationFrame(() => {
+        if (pendingDragRange.current) setViewportRange(pendingDragRange.current);
+        dragFrame.current = null;
+      });
+    }
   }
 
   function handlePointerUp() {
     dragState.current = null;
+    setIsDragging(false);
   }
 
   const focused = focusedNodeId ? findNodeAndStoryline(focusedNodeId) : null;
@@ -246,7 +265,7 @@ export function Timeline() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
-        style={{ cursor: "grab" }}
+        style={{ cursor: isDragging ? "grabbing" : "grab" }}
       >
         <svg
           viewBox={`0 0 ${canvasW} ${canvasH}`}
@@ -256,6 +275,7 @@ export function Timeline() {
           }
           role="img"
           aria-label="歷史時間軸，顯示各故事線的節點分佈"
+          style={{ minWidth: isHorizontal ? canvasW : undefined }}
         >
           {/* main axis */}
           {isHorizontal ? (
@@ -434,6 +454,10 @@ export function Timeline() {
                       return (
                         <g
                           key={node.id}
+                          data-timeline-action
+                          role="button"
+                          tabIndex={matches ? 0 : -1}
+                          aria-label={`查看${node.title}詳情`}
                           opacity={opacity}
                           style={{
                             cursor: matches ? "pointer" : "default",
@@ -443,6 +467,13 @@ export function Timeline() {
                             e.stopPropagation();
                             setFocusedNodeId(node.id);
                             setFocusedClusterNodeIds(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setFocusedNodeId(node.id);
+                              setFocusedClusterNodeIds(null);
+                            }
                           }}
                           onMouseEnter={() => setHoveredNode(node.id)}
                           onMouseLeave={() =>
@@ -634,11 +665,22 @@ export function Timeline() {
                     return (
                       <g
                         key={cluster.id}
+                        data-timeline-action
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`查看同一時間的 ${cluster.nodeIds.length} 個節點`}
                         style={{ cursor: "pointer" }}
                         onClick={(e) => {
                           e.stopPropagation();
                           setFocusedNodeId(null);
                           setFocusedClusterNodeIds(cluster.nodeIds);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setFocusedNodeId(null);
+                            setFocusedClusterNodeIds(cluster.nodeIds);
+                          }
                         }}
                       >
                         {/* connector from axis to marker */}
@@ -690,6 +732,10 @@ export function Timeline() {
                   return (
                     <g
                       key={cluster.id}
+                      data-timeline-action
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`放大查看 ${cluster.nodeIds.length} 個相近節點`}
                       style={{ cursor: "pointer" }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -697,6 +743,15 @@ export function Timeline() {
                           start: cluster.start - pad,
                           end: cluster.end + pad,
                         });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setViewportRange({
+                            start: cluster.start - pad,
+                            end: cluster.end + pad,
+                          });
+                        }
                       }}
                     >
                       <circle
