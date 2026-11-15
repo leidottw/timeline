@@ -7,13 +7,18 @@ const PALETTE = ['#D85A30', '#378ADD', '#7F77DD', '#D4537E', '#1D9E75', '#BA7517
 export function StorylineEditor({
   storyline,
   onClose,
+  mode = 'modal',
+  onSaved,
 }: {
   /** When provided, the editor opens in edit mode for this storyline instead of create mode. */
   storyline?: Storyline
   onClose: () => void
+  mode?: 'modal' | 'panel'
+  onSaved?: (storylineId: string) => void
 }) {
   const addStoryline = useTimelineStore((s) => s.addStoryline)
   const updateStoryline = useTimelineStore((s) => s.updateStoryline)
+  const removeStoryline = useTimelineStore((s) => s.removeStoryline)
   const storylines = useTimelineStore((s) => s.storylines)
   const isEditing = Boolean(storyline)
   const defaultPosition = storyline?.position ?? 'above'
@@ -27,8 +32,10 @@ export function StorylineEditor({
   const [order, setOrder] = useState(storyline?.order ?? defaultOrder)
   const [color, setColor] = useState(storyline?.color ?? PALETTE[storylines.length % PALETTE.length])
   const [description, setDescription] = useState(storyline?.description ?? '')
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    if (mode === 'panel') return
     const previouslyFocused = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -41,13 +48,15 @@ export function StorylineEditor({
       document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [onClose])
+  }, [mode, onClose])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
 
+    let savedStorylineId: string
     if (isEditing && storyline) {
+      savedStorylineId = storyline.id
       updateStoryline(storyline.id, {
         name: name.trim(),
         color,
@@ -56,8 +65,9 @@ export function StorylineEditor({
         description: description.trim() || undefined,
       })
     } else {
+      savedStorylineId = `storyline-${crypto.randomUUID()}`
       addStoryline({
-        id: `storyline-${crypto.randomUUID()}`,
+        id: savedStorylineId,
         name: name.trim(),
         color,
         position,
@@ -66,21 +76,25 @@ export function StorylineEditor({
         nodes: [],
       })
     }
-    onClose()
+    if (mode === 'modal') onClose()
+    else {
+      setSaved(true)
+      onSaved?.(savedStorylineId)
+    }
   }
 
   return (
     <div
-      style={{ minHeight: 400 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45"
-      onClick={onClose}
+      style={mode === 'modal' ? { minHeight: 400 } : undefined}
+      className={mode === 'modal' ? 'fixed inset-0 z-50 flex items-center justify-center bg-black/45' : 'editor-panel-content'}
+      onClick={mode === 'modal' ? onClose : undefined}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="mx-4 w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
-        role="dialog"
-        aria-modal="true"
+        className={mode === 'modal' ? 'mx-4 w-full max-w-sm rounded-xl bg-white p-5 shadow-xl' : 'editor-panel-form'}
+        role={mode === 'modal' ? 'dialog' : undefined}
+        aria-modal={mode === 'modal' ? true : undefined}
         aria-labelledby="storyline-editor-title"
       >
         <div className="mb-3 flex items-center justify-between">
@@ -115,8 +129,8 @@ export function StorylineEditor({
             }}
             className="form-control mt-1"
           >
-            <option value="above">上方（水平模式）/ 左側（垂直模式）</option>
-            <option value="below">下方（水平模式）/ 右側（垂直模式）</option>
+            <option value="above">時間軸上方</option>
+            <option value="below">時間軸下方</option>
           </select>
         </label>
 
@@ -158,13 +172,28 @@ export function StorylineEditor({
         </label>
 
         <div className="flex justify-end gap-2">
+          {isEditing && storyline && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`確定刪除「${storyline.name}」及其中 ${storyline.nodes.length} 個節點？此操作可以復原。`)) {
+                  removeStoryline(storyline.id)
+                  onClose()
+                }
+              }}
+              className="btn-danger mr-auto"
+            >
+              刪除
+            </button>
+          )}
           <button type="button" onClick={onClose} className="btn-secondary">
-            取消
+            {mode === 'panel' ? '關閉' : '取消'}
           </button>
           <button type="submit" className="btn-primary">
             {isEditing ? '儲存變更' : '建立故事線'}
           </button>
         </div>
+        {mode === 'panel' && saved && <p className="mt-3 text-right text-xs text-emerald-700" role="status">已儲存</p>}
       </form>
     </div>
   )

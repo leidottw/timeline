@@ -7,11 +7,15 @@ export function NodeEditor({
   storyline,
   node,
   onClose,
+  mode = 'modal',
+  onSaved,
 }: {
   storyline: Storyline
   /** When provided, the editor opens in edit mode for this node instead of create mode. */
   node?: TimelineNode
   onClose: () => void
+  mode?: 'modal' | 'panel'
+  onSaved?: (nodeId: string) => void
 }) {
   const addNode = useTimelineStore((s) => s.addNode)
   const updateNode = useTimelineStore((s) => s.updateNode)
@@ -28,8 +32,10 @@ export function NodeEditor({
   const [imagesInput, setImagesInput] = useState((node?.images ?? []).join('\n'))
   const [links, setLinks] = useState<NodeLink[]>(node?.links ?? [])
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    if (mode === 'panel') return
     const previouslyFocused = document.activeElement as HTMLElement | null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -42,7 +48,7 @@ export function NodeEditor({
       document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [onClose])
+  }, [mode, onClose])
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -101,26 +107,33 @@ export function NodeEditor({
       return
     }
 
+    let savedNodeId: string
     if (isEditing && node) {
+      savedNodeId = node.id
       updateNode(storyline.id, node.id, payload)
     } else {
-      addNode(storyline.id, { id: `node-${crypto.randomUUID()}`, ...payload })
+      savedNodeId = `node-${crypto.randomUUID()}`
+      addNode(storyline.id, { id: savedNodeId, ...payload })
     }
-    onClose()
+    if (mode === 'modal') onClose()
+    else {
+      setSaved(true)
+      onSaved?.(savedNodeId)
+    }
   }
 
   return (
     <div
-      style={{ minHeight: 400 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45"
-      onClick={onClose}
+      style={mode === 'modal' ? { minHeight: 400 } : undefined}
+      className={mode === 'modal' ? 'fixed inset-0 z-50 flex items-center justify-center bg-black/45' : 'editor-panel-content'}
+      onClick={mode === 'modal' ? onClose : undefined}
     >
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
-        className="mx-4 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
-        role="dialog"
-        aria-modal="true"
+        className={mode === 'modal' ? 'mx-4 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl' : 'editor-panel-form'}
+        role={mode === 'modal' ? 'dialog' : undefined}
+        aria-modal={mode === 'modal' ? true : undefined}
         aria-labelledby="node-editor-title"
       >
         <div className="mb-3 flex items-center justify-between">
@@ -276,12 +289,13 @@ export function NodeEditor({
             </button>
           )}
           <button type="button" onClick={onClose} className="btn-secondary">
-            取消
+            {mode === 'panel' ? '關閉' : '取消'}
           </button>
           <button type="submit" className="btn-primary">
             {isEditing ? '儲存變更' : '新增節點'}
           </button>
         </div>
+        {mode === 'panel' && saved && <p className="mt-3 text-right text-xs text-emerald-700" role="status">已儲存</p>}
       </form>
     </div>
   )
